@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*.pdf
+*.PDF
+
+storage/temp/*
+!storage/temp/.gitkeep
