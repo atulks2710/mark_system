@@ -1,63 +1,14 @@
 """
-MAIN FLASK APPLICATION
-======================
-
-KTU Mark Processing System
-
-Workflow:
-
-1. Teacher uploads Internal Mark PDF.
-2. Server extracts:
-       Registration Number
-       Internal Mark
-3. Teacher manually enters Course Code.
-4. Teacher uploads Result PDF.
-5. Server:
-       - Locates Computer Science & Engineering section
-       - Uses the manually entered course code
-       - Extracts grades
-6. Registration numbers are matched.
-7. Final table is returned to frontend.
-8. Teacher can download Excel file.
-
-Project structure expected:
-
-mark_processing_system/
-│
-├── app.py
-│
-├── parser/
-│   ├── __init__.py
-│   ├── internal_parser.py
-│   └── result_parser.py
-│
-├── services/
-│   ├── __init__.py
-│   ├── matcher.py
-│   └── excel_exporter.py
-│
-├── static/
-│   ├── css/
-│   │   └── style.css
-│   └── js/
-│       └── app.js
-│
-├── storage/
-│   └── temp/
-│
-├── templates/
-│   └── index.html
-│
-└── requirements.txt
+ANSORA Mark Processing System
+Flask application and API routes.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
+import inspect
 import uuid
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from flask import (
     Flask,
@@ -66,13 +17,7 @@ from flask import (
     request,
     send_file,
 )
-
 from werkzeug.utils import secure_filename
-
-
-# ---------------------------------------------------------------------------
-# IMPORT OUR OWN MODULES
-# ---------------------------------------------------------------------------
 
 from parser import (
     InternalPDFError,
@@ -93,94 +38,24 @@ from services import (
 
 
 # ---------------------------------------------------------------------------
-# FLASK APPLICATION
+# FLASK APPLICATION AND CONFIGURATION
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
 
+BASE_DIR = Path(__file__).resolve().parent
+STORAGE_DIR = BASE_DIR / "storage"
+TEMP_DIR = STORAGE_DIR / "temp"
 
-# ---------------------------------------------------------------------------
-# APPLICATION CONFIGURATION
-# ---------------------------------------------------------------------------
-
-BASE_DIR = Path(
-    __file__
-).resolve().parent
-
-
-STORAGE_DIR = (
-    BASE_DIR
-    / "storage"
-)
-
-
-TEMP_DIR = (
-    STORAGE_DIR
-    / "temp"
-)
-
-
-# Maximum upload size.
-#
-# 20 MB should be more than enough for normal KTU result PDFs.
 MAX_FILE_SIZE = 20 * 1024 * 1024
-
-
-app.config[
-    "MAX_CONTENT_LENGTH"
-] = MAX_FILE_SIZE
-
-
-# Allowed file extension.
-ALLOWED_EXTENSIONS = {
-    ".pdf"
-}
-
-
-# Temporary sessions expire after this amount of time.
 SESSION_EXPIRY_MINUTES = 60
+ALLOWED_EXTENSIONS = {".pdf"}
+ALLOWED_INTERNAL_SCALES = {"50", "75", "100"}
 
+app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-# Create temp folder automatically.
-TEMP_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
-
-
-# ---------------------------------------------------------------------------
-# IN-MEMORY PROCESSING SESSIONS
-# ---------------------------------------------------------------------------
-#
-# We are intentionally not using MongoDB/database for Version 1.
-#
-# The teacher's processing session is temporarily held in memory:
-#
-# jobs = {
-#
-#     "job-id": {
-#
-#         "created_at": datetime,
-#
-#         "internal_pdf": "...",
-#
-#         "result_pdf": "...",
-#
-#         "internal_marks": {...},
-#
-#         "grades": {...},
-#
-#         "course_code": "CST309",
-#
-#         "results": [...]
-#
-#     }
-#
-# }
-#
-# Later, this can be replaced with a database if required.
-# ---------------------------------------------------------------------------
-
+# Version 1 stores temporary processing sessions in memory.
 jobs: dict[str, dict] = {}
 
 
@@ -189,31 +64,15 @@ jobs: dict[str, dict] = {}
 # ---------------------------------------------------------------------------
 
 def allowed_file(filename: str) -> bool:
-    """
-    Check whether uploaded file has a PDF extension.
-    """
-
+    """Return True only for files with a PDF extension."""
     if not filename:
         return False
-
-    extension = Path(
-        filename
-    ).suffix.lower()
-
-    return extension in ALLOWED_EXTENSIONS
+    return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
 
-def create_job() -> str:
-    """
-    Create a unique processing session.
-
-    Returns:
-        UUID string
-    """
-
-    job_id = str(
-        uuid.uuid4()
-    )
+def create_job(internal_mark_scale: int) -> str:
+    """Create a new processing session and remember its assessment scale."""
+    job_id = str(uuid.uuid4())
 
     jobs[job_id] = {
         "created_at": datetime.now(),
@@ -226,361 +85,268 @@ def create_job() -> str:
         "course_code": None,
         "results": [],
         "summary": {},
+        "internal_mark_scale": internal_mark_scale,
         "branch": "COMPUTER SCIENCE & ENGINEERING",
         "semester": "",
     }
-
     return job_id
 
 
 def get_job(job_id: str) -> dict | None:
-    """
-    Retrieve an existing processing session.
-    """
-
-    return jobs.get(
-        job_id
-    )
+    """Return a processing session, or None if it does not exist."""
+    return jobs.get(job_id)
 
 
-def save_uploaded_file(
-    uploaded_file,
-    job_id: str,
-    prefix: str,
-) -> Path:
-    """
-    Save uploaded PDF into a unique temporary location.
-
-    Example:
-        storage/temp/
-            abc123_internal_Report.pdf
-    """
-
-    original_filename = secure_filename(
-        uploaded_file.filename
-    )
-
+def save_uploaded_file(uploaded_file, job_id: str, prefix: str) -> Path:
+    """Save an uploaded PDF using a safe, session-specific filename."""
+    original_filename = secure_filename(uploaded_file.filename or "")
     if not original_filename:
-        raise ValueError(
-            "Invalid filename."
-        )
+        raise ValueError("Invalid filename.")
 
-    extension = Path(
-        original_filename
-    ).suffix.lower()
-
+    extension = Path(original_filename).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
-        raise ValueError(
-            "Only PDF files are allowed."
-        )
+        raise ValueError("Only PDF files are allowed.")
 
-    safe_name = (
-        f"{job_id}_{prefix}_"
-        f"{original_filename}"
-    )
-
-    destination = (
-        TEMP_DIR
-        / safe_name
-    )
-
-    uploaded_file.save(
-        destination
-    )
-
+    destination = TEMP_DIR / f"{job_id}_{prefix}_{original_filename}"
+    uploaded_file.save(destination)
     return destination
 
 
 def remove_file(path: str | Path | None) -> None:
-    """
-    Safely delete a temporary file.
-    """
-
+    """Delete a temporary file without allowing cleanup errors to crash Flask."""
     if not path:
         return
-
     try:
-
-        file_path = Path(
-            path
-        )
-
-        if file_path.exists():
+        file_path = Path(path)
+        if file_path.exists() and file_path.is_file():
             file_path.unlink()
-
     except Exception:
-        # Cleanup should never crash the application.
-        pass
+        app.logger.warning("Could not remove temporary file: %s", path)
+
+
+def remove_job_files(job: dict) -> None:
+    """Delete the PDF files belonging to a session."""
+    remove_file(job.get("internal_pdf"))
+    remove_file(job.get("result_pdf"))
 
 
 def cleanup_old_jobs() -> None:
-    """
-    Remove old processing sessions.
-
-    This prevents storage/memory from growing forever.
-    """
-
+    """Remove expired sessions and their temporary PDF files."""
     now = datetime.now()
+    expired_ids = []
 
-    expired_job_ids = []
+    for job_id, job in list(jobs.items()):
+        created_at = job.get("created_at")
+        if not created_at or now - created_at > timedelta(minutes=SESSION_EXPIRY_MINUTES):
+            expired_ids.append(job_id)
 
-    for job_id, job in jobs.items():
-
-        created_at = job.get(
-            "created_at"
-        )
-
-        if not created_at:
-            expired_job_ids.append(
-                job_id
-            )
-            continue
-
-        age = (
-            now - created_at
-        )
-
-        if age > timedelta(
-            minutes=SESSION_EXPIRY_MINUTES
-        ):
-
-            expired_job_ids.append(
-                job_id
-            )
-
-    for job_id in expired_job_ids:
-
-        job = jobs.pop(
-            job_id,
-            None
-        )
-
-        if not job:
-            continue
-
-        remove_file(
-            job.get(
-                "internal_pdf"
-            )
-        )
-
-        remove_file(
-            job.get(
-                "result_pdf"
-            )
-        )
+    for job_id in expired_ids:
+        job = jobs.pop(job_id, None)
+        if job:
+            remove_job_files(job)
 
 
-def json_error(
-    message: str,
-    status_code: int = 400,
-):
+def json_error(message: str, status_code: int = 400):
+    """Return a consistent JSON error response."""
+    return jsonify({"success": False, "error": message}), status_code
+
+
+def get_request_value(name: str, default: str = "") -> str:
     """
-    Return a consistent JSON error response.
+    Read a value from either a regular form submission or a JSON request.
+    The updated frontend sends JSON when changing course codes.
     """
+    value = request.form.get(name)
+    if value is None:
+        payload = request.get_json(silent=True) or {}
+        value = payload.get(name, default)
+    return str(value if value is not None else default).strip()
 
-    return jsonify(
-        {
-            "success": False,
-            "error": message,
-        }
-    ), status_code
+
+def get_internal_scale(job: dict) -> int:
+    """Return the stored internal assessment maximum mark."""
+    try:
+        scale = int(job.get("internal_mark_scale", 50))
+    except (TypeError, ValueError):
+        scale = 50
+
+    if scale not in (50, 75, 100):
+        raise ValueError("Invalid internal assessment scale stored in session.")
+    return scale
+
+
+def merge_session_marks(internal_marks: dict, grades: dict, course_code: str, job: dict):
+    """
+    Merge marks using the assessment maximum selected in Step 1.
+
+    The matcher is being updated alongside this application. Parameter
+    inspection keeps this route compatible with either internal_max_mark
+    or internal_mark_scale as the matcher's scale argument.
+    """
+    scale = get_internal_scale(job)
+    parameters = inspect.signature(merge_mark_data).parameters
+    accepts_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+
+    kwargs = {}
+    if "course_code" in parameters or accepts_kwargs:
+        kwargs["course_code"] = course_code
+
+    if "internal_max_mark" in parameters or accepts_kwargs:
+        kwargs["internal_max_mark"] = scale
+    elif "internal_mark_scale" in parameters:
+        kwargs["internal_mark_scale"] = scale
+    elif "assessment_scale" in parameters:
+        kwargs["assessment_scale"] = scale
+
+    return merge_mark_data(internal_marks, grades, **kwargs)
+
+
+def make_frontend_summary(summary: dict, results: list, internal_marks: dict) -> dict:
+    """
+    Normalize summary names expected by the browser while preserving all
+    fields returned by the summary service.
+    """
+    data = dict(summary or {})
+
+    matched = data.get(
+        "matched_students",
+        data.get("matched", sum(1 for row in results if str(row.get("grade", "")).upper() not in {"NOT FOUND", ""})),
+    )
+    missing = data.get(
+        "missing_students",
+        data.get("missing_grades", data.get("missing", max(0, len(internal_marks) - int(matched or 0)))),
+    )
+    missing_reg_nos = data.get(
+        "missing_reg_nos",
+        data.get("missing_grade_reg_numbers", data.get("missing_reg_numbers", [])),
+    )
+
+    data["total_students"] = len(internal_marks)
+    data["matched_students"] = int(matched or 0)
+    data["missing_students"] = int(missing or 0)
+    data["missing_reg_nos"] = list(missing_reg_nos or [])
+    return data
+
+
+def processing_response(job_id: str, course_code: str, results: list, summary: dict):
+    """Create a standard result response for process and change-course routes."""
+    job = jobs[job_id]
+    frontend_summary = make_frontend_summary(
+        summary,
+        results,
+        job.get("internal_marks", {}),
+    )
+
+    return jsonify({
+        "success": True,
+        "job_id": job_id,
+        "course_code": course_code,
+        "internal_mark_scale": get_internal_scale(job),
+        "assessment_type": {
+            50: "Regular Internal",
+            75: "Laboratory",
+            100: "Project",
+        }[get_internal_scale(job)],
+        "total_students": frontend_summary["total_students"],
+        "matched_students": frontend_summary["matched_students"],
+        "missing_grades": frontend_summary["missing_students"],
+        "result_only_students": summary.get("result_only_students", 0),
+        "missing_grade_reg_numbers": summary.get("missing_grade_reg_numbers", []),
+        "result_only_reg_numbers": summary.get("result_only_reg_numbers", []),
+        "summary": frontend_summary,
+        "rows": results,
+        "message": f"{course_code} grades processed successfully.",
+    })
 
 
 # ---------------------------------------------------------------------------
-# HOME PAGE
+# HOME PAGE AND HEALTH CHECK
 # ---------------------------------------------------------------------------
 
 @app.get("/")
 def index():
-    """
-    Render the main website.
-    """
+    return render_template("index.html")
 
-    return render_template(
-        "index.html"
-    )
-
-
-# ---------------------------------------------------------------------------
-# HEALTH CHECK
-# ---------------------------------------------------------------------------
 
 @app.get("/api/health")
 def health_check():
-    """
-    Simple endpoint to check whether Flask is running.
-    """
-
-    return jsonify(
-        {
-            "success": True,
-            "message": "Mark Processing System is running.",
-        }
-    )
+    return jsonify({
+        "success": True,
+        "message": "ANSORA Mark Processing System is running.",
+    })
 
 
 # ---------------------------------------------------------------------------
-# STEP 1
-# UPLOAD INTERNAL PDF
+# STEP 1: UPLOAD INTERNAL PDF
 # ---------------------------------------------------------------------------
 
 @app.post("/api/upload-internal")
 def upload_internal():
-    """
-    Receive and process the Internal Mark PDF.
-
-    Expected form field:
-
-        internal_pdf
-
-    Response:
-
-        {
-            "success": true,
-            "job_id": "...",
-            "student_count": 61,
-            "students": [...]
-        }
-    """
-
-    # Remove expired jobs first.
     cleanup_old_jobs()
 
-    # Check whether file was submitted.
     if "internal_pdf" not in request.files:
+        return json_error("Please select the internal marks PDF.")
 
-        return json_error(
-            "Please select the Internal Mark PDF."
-        )
-
-    uploaded_file = request.files[
-        "internal_pdf"
-    ]
-
-    # Browser may submit an empty filename.
+    uploaded_file = request.files["internal_pdf"]
     if not uploaded_file.filename:
+        return json_error("No internal marks PDF was selected.")
 
+    if not allowed_file(uploaded_file.filename):
+        return json_error("Invalid file type. Please upload a PDF file.")
+
+    scale_value = get_request_value("internal_mark_scale")
+    if scale_value not in ALLOWED_INTERNAL_SCALES:
         return json_error(
-            "No Internal Mark PDF was selected."
+            "Please select an assessment type: 50, 75 or 100 marks."
         )
 
-    # Check extension.
-    if not allowed_file(
-        uploaded_file.filename
-    ):
-
-        return json_error(
-            "Invalid file type. "
-            "Please upload a PDF file."
-        )
-
-    # Create processing session.
-    job_id = create_job()
-
-    job = jobs[
-        job_id
-    ]
+    internal_mark_scale = int(scale_value)
+    job_id = create_job(internal_mark_scale)
+    job = jobs[job_id]
 
     try:
+        internal_path = save_uploaded_file(uploaded_file, job_id, "internal")
+        job["internal_pdf"] = str(internal_path)
+        job["internal_filename"] = secure_filename(uploaded_file.filename)
 
-        # Save uploaded PDF.
-        internal_path = save_uploaded_file(
-            uploaded_file,
-            job_id,
-            "internal",
-        )
+        internal_marks = extract_internal_marks(internal_path)
+        if not internal_marks:
+            raise InternalPDFError("No student internal marks were found in the PDF.")
 
-        job[
-            "internal_pdf"
-        ] = str(
-            internal_path
-        )
+        job["internal_marks"] = internal_marks
 
-        job[
-            "internal_filename"
-        ] = secure_filename(
-            uploaded_file.filename
-        )
-
-        # Parse internal marks.
-        internal_marks = extract_internal_marks(
-            internal_path
-        )
-
-        # Store extracted data.
-        job[
-            "internal_marks"
-        ] = internal_marks
-
-        # Convert to frontend-friendly list.
         students = [
-            {
-                "reg_no": reg_no,
-                "internal_mark": mark,
-            }
-            for reg_no, mark
-            in internal_marks.items()
+            {"reg_no": reg_no, "internal_mark": mark}
+            for reg_no, mark in internal_marks.items()
         ]
 
-        # Return success.
-        return jsonify(
-            {
-                "success": True,
-
-                "job_id": job_id,
-
-                "student_count": len(
-                    internal_marks
-                ),
-
-                "students": students,
-
-                "message": (
-                    "Internal Mark PDF processed successfully."
-                ),
-            }
-        )
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "student_count": len(students),
+            "internal_mark_scale": internal_mark_scale,
+            "assessment_type": {
+                50: "Regular Internal",
+                75: "Laboratory",
+                100: "Project",
+            }[internal_mark_scale],
+            "students": students,
+            "message": "Internal marks PDF processed successfully.",
+        })
 
     except InternalPDFError as exc:
-
-        # Delete failed session/files.
-        remove_file(
-            job.get(
-                "internal_pdf"
-            )
-        )
-
-        jobs.pop(
-            job_id,
-            None,
-        )
-
-        return json_error(
-            str(exc)
-        )
+        remove_job_files(job)
+        jobs.pop(job_id, None)
+        return json_error(str(exc))
 
     except Exception as exc:
-
-        remove_file(
-            job.get(
-                "internal_pdf"
-            )
-        )
-
-        jobs.pop(
-            job_id,
-            None,
-        )
-
-        app.logger.exception(
-            "Unexpected error while processing Internal PDF."
-        )
-
-        return json_error(
-            f"Unexpected error while processing PDF: {exc}",
-            500,
-        )
+        remove_job_files(job)
+        jobs.pop(job_id, None)
+        app.logger.exception("Unexpected error while processing internal PDF.")
+        return json_error(f"Unexpected error while processing PDF: {exc}", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -588,631 +354,201 @@ def upload_internal():
 # ---------------------------------------------------------------------------
 
 @app.get("/api/internal/<job_id>")
-def get_internal_data(
-    job_id: str,
-):
-    """
-    Return extracted internal marks for an existing session.
-    """
-
+def get_internal_data(job_id: str):
     cleanup_old_jobs()
-
-    job = get_job(
-        job_id
-    )
+    job = get_job(job_id)
 
     if not job:
+        return json_error("Processing session not found or expired.", 404)
 
-        return json_error(
-            "Processing session not found or expired.",
-            404,
-        )
-
-    internal_marks = job.get(
-        "internal_marks",
-        {}
-    )
-
+    internal_marks = job.get("internal_marks", {})
     students = [
-        {
-            "reg_no": reg_no,
-            "internal_mark": mark,
-        }
-        for reg_no, mark
-        in internal_marks.items()
+        {"reg_no": reg_no, "internal_mark": mark}
+        for reg_no, mark in internal_marks.items()
     ]
 
-    return jsonify(
-        {
-            "success": True,
-            "job_id": job_id,
-            "student_count": len(
-                students
-            ),
-            "students": students,
-        }
-    )
+    return jsonify({
+        "success": True,
+        "job_id": job_id,
+        "student_count": len(students),
+        "internal_mark_scale": get_internal_scale(job),
+        "students": students,
+    })
 
 
 # ---------------------------------------------------------------------------
-# GET AVAILABLE CSE COURSE CODES
+# OPTIONAL COURSE CODE SUGGESTIONS
 # ---------------------------------------------------------------------------
 
 @app.post("/api/course-codes")
 def get_course_codes():
-    """
-    Read the Result PDF and return course codes from the
-    Computer Science & Engineering section.
-
-    IMPORTANT:
-        This endpoint does NOT automatically choose a course.
-
-    It is only intended to provide optional suggestions to the frontend.
-
-    The teacher still manually enters/selects the actual course code.
-    """
-
     if "result_pdf" not in request.files:
+        return json_error("Please upload the result PDF.")
 
-        return json_error(
-            "Please upload the Result PDF."
-        )
-
-    uploaded_file = request.files[
-        "result_pdf"
-    ]
-
+    uploaded_file = request.files["result_pdf"]
     if not uploaded_file.filename:
+        return json_error("No result PDF was selected.")
 
-        return json_error(
-            "No Result PDF was selected."
-        )
+    if not allowed_file(uploaded_file.filename):
+        return json_error("Invalid file type. Please upload a PDF file.")
 
-    if not allowed_file(
-        uploaded_file.filename
-    ):
-
-        return json_error(
-            "Invalid file type. "
-            "Please upload a PDF file."
-        )
-
-    # Temporary ID for this operation.
-    temp_id = str(
-        uuid.uuid4()
-    )
+    temp_id = str(uuid.uuid4())
+    temp_path = None
 
     try:
+        temp_path = save_uploaded_file(uploaded_file, temp_id, "course-list")
+        course_codes = extract_result_course_codes(temp_path)
 
-        temp_path = save_uploaded_file(
-            uploaded_file,
-            temp_id,
-            "course-list",
-        )
-
-        course_codes = extract_result_course_codes(
-            temp_path
-        )
-
-        return jsonify(
-            {
-                "success": True,
-                "course_codes": course_codes,
-            }
-        )
+        return jsonify({
+            "success": True,
+            "course_codes": course_codes,
+        })
 
     except ResultPDFError as exc:
-
-        return json_error(
-            str(exc)
-        )
+        return json_error(str(exc))
 
     except Exception as exc:
-
-        app.logger.exception(
-            "Unexpected error while reading course codes."
-        )
-
-        return json_error(
-            f"Unexpected error while reading Result PDF: {exc}",
-            500,
-        )
+        app.logger.exception("Unexpected error while reading course codes.")
+        return json_error(f"Unexpected error while reading result PDF: {exc}", 500)
 
     finally:
-
-        # Delete temporary course-list PDF.
-        remove_file(
-            TEMP_DIR
-            / f"{temp_id}_course-list_"
-            f"{secure_filename(uploaded_file.filename)}"
-        )
+        if temp_path:
+            remove_file(temp_path)
 
 
 # ---------------------------------------------------------------------------
-# STEP 2
-# PROCESS RESULT PDF
+# STEP 2: PROCESS RESULT PDF
 # ---------------------------------------------------------------------------
 
 @app.post("/api/process-result")
 def process_result():
-    """
-    Process Result PDF using the manually entered course code.
-
-    Expected form fields:
-
-        job_id
-        course_code
-        result_pdf
-
-    The course code is ALWAYS supplied by the teacher.
-
-    Example:
-
-        course_code = CST309
-    """
-
     cleanup_old_jobs()
 
-    # ---------------------------------------------------------------
-    # JOB ID
-    # ---------------------------------------------------------------
-
-    job_id = (
-        request.form.get(
-            "job_id",
-            "",
-        )
-        .strip()
-    )
+    job_id = get_request_value("job_id")
+    course_code = get_request_value("course_code").upper()
 
     if not job_id:
+        return json_error("Processing session ID is missing.")
 
-        return json_error(
-            "Processing session ID is missing."
-        )
-
-    job = get_job(
-        job_id
-    )
-
+    job = get_job(job_id)
     if not job:
-
         return json_error(
-            "Processing session not found or expired. "
-            "Please upload the Internal Mark PDF again.",
+            "Processing session not found or expired. Please upload the internal marks PDF again.",
             404,
         )
 
-    # ---------------------------------------------------------------
-    # COURSE CODE
-    # ---------------------------------------------------------------
-
-    course_code = (
-        request.form.get(
-            "course_code",
-            "",
-        )
-        .strip()
-        .upper()
-    )
-
     if not course_code:
-
-        return json_error(
-            "Please enter the course code."
-        )
-
-    # ---------------------------------------------------------------
-    # RESULT PDF
-    # ---------------------------------------------------------------
+        return json_error("Please enter the course code.")
 
     if "result_pdf" not in request.files:
+        return json_error("Please select the result PDF.")
 
-        return json_error(
-            "Please select the Result PDF."
-        )
-
-    uploaded_file = request.files[
-        "result_pdf"
-    ]
-
+    uploaded_file = request.files["result_pdf"]
     if not uploaded_file.filename:
+        return json_error("No result PDF was selected.")
 
-        return json_error(
-            "No Result PDF was selected."
-        )
+    if not allowed_file(uploaded_file.filename):
+        return json_error("Invalid file type. Please upload a PDF file.")
 
-    if not allowed_file(
-        uploaded_file.filename
-    ):
-
-        return json_error(
-            "Invalid file type. "
-            "Please upload a PDF file."
-        )
-
-    # ---------------------------------------------------------------
-    # SAVE RESULT PDF
-    # ---------------------------------------------------------------
+    result_path = None
 
     try:
+        result_path = save_uploaded_file(uploaded_file, job_id, "result")
 
-        result_path = save_uploaded_file(
-            uploaded_file,
-            job_id,
-            "result",
-        )
+        old_result = job.get("result_pdf")
+        if old_result and Path(old_result) != result_path:
+            remove_file(old_result)
 
-        # If an earlier result PDF exists, remove it.
-        old_result = job.get(
-            "result_pdf"
-        )
+        job["result_pdf"] = str(result_path)
+        job["result_filename"] = secure_filename(uploaded_file.filename)
 
-        if old_result:
-
-            old_path = Path(
-                old_result
-            )
-
-            if old_path != result_path:
-
-                remove_file(
-                    old_path
-                )
-
-        job[
-            "result_pdf"
-        ] = str(
-            result_path
-        )
-
-        job[
-            "result_filename"
-        ] = secure_filename(
-            uploaded_file.filename
-        )
-
-        # ---------------------------------------------------------------
-        # EXTRACT GRADES
-        # ---------------------------------------------------------------
-
-        grades = extract_result_grades(
-            result_path,
-            course_code,
-        )
-
-        job[
-            "grades"
-        ] = grades
-
-        job[
-            "course_code"
-        ] = course_code
-
-        # ---------------------------------------------------------------
-        # MATCH DATA
-        # ---------------------------------------------------------------
-
-        internal_marks = job.get(
-            "internal_marks",
-            {}
-        )
+        grades = extract_result_grades(result_path, course_code)
+        internal_marks = job.get("internal_marks", {})
 
         if not internal_marks:
-
             return json_error(
-                "No internal-mark data exists for this session. "
-                "Please upload the Internal Mark PDF again."
+                "No internal-mark data exists for this session. Please upload the internal marks PDF again."
             )
 
-        results = merge_mark_data(
-            internal_marks,
-            grades,
-        )
+        results = merge_session_marks(internal_marks, grades, course_code, job)
+        summary = create_processing_summary(internal_marks, grades)
 
-        # ---------------------------------------------------------------
-        # SUMMARY
-        # ---------------------------------------------------------------
+        job["grades"] = grades
+        job["course_code"] = course_code
+        job["results"] = results
+        job["summary"] = summary
 
-        summary = create_processing_summary(
-            internal_marks,
-            grades,
-        )
-
-        # Save everything into job.
-        job[
-            "results"
-        ] = results
-
-        job[
-            "summary"
-        ] = summary
-
-        # ---------------------------------------------------------------
-        # FRONTEND RESPONSE
-        # ---------------------------------------------------------------
-
-        return jsonify(
-            {
-                "success": True,
-
-                "job_id": job_id,
-
-                "course_code": course_code,
-
-                "total_students": len(
-                    results
-                ),
-
-                "matched_students": summary[
-                    "matched_students"
-                ],
-
-                "missing_grades": summary[
-                    "missing_grades"
-                ],
-
-                "result_only_students": summary[
-                    "result_only_students"
-                ],
-
-                "missing_grade_reg_numbers":
-                    summary[
-                        "missing_grade_reg_numbers"
-                    ],
-
-                "result_only_reg_numbers":
-                    summary[
-                        "result_only_reg_numbers"
-                    ],
-
-                "rows": results,
-
-                "message": (
-                    f"{course_code} grades processed successfully."
-                ),
-            }
-        )
+        return processing_response(job_id, course_code, results, summary)
 
     except ResultPDFError as exc:
-
-        return json_error(
-            str(exc)
-        )
+        return json_error(str(exc))
 
     except MatchingError as exc:
-
-        return json_error(
-            str(exc)
-        )
+        return json_error(str(exc))
 
     except Exception as exc:
-
-        app.logger.exception(
-            "Unexpected error while processing Result PDF."
-        )
-
-        return json_error(
-            f"Unexpected error while processing Result PDF: {exc}",
-            500,
-        )
+        app.logger.exception("Unexpected error while processing result PDF.")
+        return json_error(f"Unexpected error while processing result PDF: {exc}", 500)
 
 
 # ---------------------------------------------------------------------------
-# REPROCESS EXISTING RESULT PDF WITH ANOTHER COURSE CODE
+# REPROCESS STORED RESULT PDF WITH ANOTHER COURSE CODE
 # ---------------------------------------------------------------------------
 
 @app.post("/api/change-course")
 def change_course():
-    """
-    Reprocess the already uploaded Result PDF using a new
-    manually entered course code.
-
-    This means the teacher does NOT have to upload the
-    Internal PDF again.
-
-    Example:
-
-        Previously:
-            CST309
-
-        Teacher changes to:
-            CST305
-
-        The same Result PDF is processed again.
-    """
-
     cleanup_old_jobs()
 
-    job_id = (
-        request.form.get(
-            "job_id",
-            "",
-        )
-        .strip()
-    )
-
-    course_code = (
-        request.form.get(
-            "course_code",
-            "",
-        )
-        .strip()
-        .upper()
-    )
+    # Accept both JSON (updated frontend) and form-encoded requests.
+    job_id = get_request_value("job_id")
+    course_code = get_request_value("course_code").upper()
 
     if not job_id:
+        return json_error("Processing session ID is missing.")
 
-        return json_error(
-            "Processing session ID is missing."
-        )
-
-    job = get_job(
-        job_id
-    )
-
+    job = get_job(job_id)
     if not job:
-
-        return json_error(
-            "Processing session not found or expired.",
-            404,
-        )
+        return json_error("Processing session not found or expired.", 404)
 
     if not course_code:
+        return json_error("Please enter the new course code.")
 
-        return json_error(
-            "Please enter the new course code."
-        )
-
-    result_pdf = job.get(
-        "result_pdf"
-    )
-
+    result_pdf = job.get("result_pdf")
     if not result_pdf:
+        return json_error("No result PDF is stored in this session.")
 
-        return json_error(
-            "No Result PDF is stored in this session."
-        )
-
-    result_path = Path(
-        result_pdf
-    )
-
+    result_path = Path(result_pdf)
     if not result_path.exists():
-
         return json_error(
-            "The stored Result PDF is no longer available. "
-            "Please upload it again."
+            "The stored result PDF is no longer available. Please upload it again."
         )
 
     try:
-
-        # ---------------------------------------------------------------
-        # Extract grade using new manually entered course code
-        # ---------------------------------------------------------------
-
-        grades = extract_result_grades(
-            result_path,
-            course_code,
-        )
-
-        internal_marks = job.get(
-            "internal_marks",
-            {}
-        )
+        grades = extract_result_grades(result_path, course_code)
+        internal_marks = job.get("internal_marks", {})
 
         if not internal_marks:
+            return json_error("Internal-mark data is missing.")
 
-            return json_error(
-                "Internal-mark data is missing."
-            )
+        results = merge_session_marks(internal_marks, grades, course_code, job)
+        summary = create_processing_summary(internal_marks, grades)
 
-        # ---------------------------------------------------------------
-        # Match again
-        # ---------------------------------------------------------------
+        job["course_code"] = course_code
+        job["grades"] = grades
+        job["results"] = results
+        job["summary"] = summary
 
-        results = merge_mark_data(
-            internal_marks,
-            grades,
-        )
-
-        summary = create_processing_summary(
-            internal_marks,
-            grades,
-        )
-
-        # ---------------------------------------------------------------
-        # Update job
-        # ---------------------------------------------------------------
-
-        job[
-            "course_code"
-        ] = course_code
-
-        job[
-            "grades"
-        ] = grades
-
-        job[
-            "results"
-        ] = results
-
-        job[
-            "summary"
-        ] = summary
-
-        # ---------------------------------------------------------------
-        # Response
-        # ---------------------------------------------------------------
-
-        return jsonify(
-            {
-                "success": True,
-
-                "job_id": job_id,
-
-                "course_code": course_code,
-
-                "total_students": len(
-                    results
-                ),
-
-                "matched_students":
-                    summary[
-                        "matched_students"
-                    ],
-
-                "missing_grades":
-                    summary[
-                        "missing_grades"
-                    ],
-
-                "result_only_students":
-                    summary[
-                        "result_only_students"
-                    ],
-
-                "missing_grade_reg_numbers":
-                    summary[
-                        "missing_grade_reg_numbers"
-                    ],
-
-                "result_only_reg_numbers":
-                    summary[
-                        "result_only_reg_numbers"
-                    ],
-
-                "rows": results,
-
-                "message": (
-                    f"Course changed to {course_code} "
-                    "and results were reprocessed."
-                ),
-            }
-        )
+        return processing_response(job_id, course_code, results, summary)
 
     except ResultPDFError as exc:
-
-        return json_error(
-            str(exc)
-        )
+        return json_error(str(exc))
 
     except MatchingError as exc:
-
-        return json_error(
-            str(exc)
-        )
+        return json_error(str(exc))
 
     except Exception as exc:
-
-        app.logger.exception(
-            "Unexpected error while changing course."
-        )
-
-        return json_error(
-            f"Unexpected error while reprocessing: {exc}",
-            500,
-        )
+        app.logger.exception("Unexpected error while changing course.")
+        return json_error(f"Unexpected error while reprocessing: {exc}", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -1220,83 +556,34 @@ def change_course():
 # ---------------------------------------------------------------------------
 
 @app.get("/api/results/<job_id>")
-def get_results(
-    job_id: str,
-):
-    """
-    Return the current processed results for a session.
-    """
-
+def get_results(job_id: str):
     cleanup_old_jobs()
-
-    job = get_job(
-        job_id
-    )
+    job = get_job(job_id)
 
     if not job:
+        return json_error("Processing session not found or expired.", 404)
 
-        return json_error(
-            "Processing session not found or expired.",
-            404,
-        )
-
-    results = job.get(
-        "results",
-        []
+    results = job.get("results", [])
+    summary = make_frontend_summary(
+        job.get("summary", {}),
+        results,
+        job.get("internal_marks", {}),
     )
 
-    summary = job.get(
-        "summary",
-        {}
-    )
-
-    return jsonify(
-        {
-            "success": True,
-
-            "job_id": job_id,
-
-            "course_code": job.get(
-                "course_code"
-            ),
-
-            "total_students": len(
-                results
-            ),
-
-            "matched_students":
-                summary.get(
-                    "matched_students",
-                    0,
-                ),
-
-            "missing_grades":
-                summary.get(
-                    "missing_grades",
-                    0,
-                ),
-
-            "result_only_students":
-                summary.get(
-                    "result_only_students",
-                    0,
-                ),
-
-            "missing_grade_reg_numbers":
-                summary.get(
-                    "missing_grade_reg_numbers",
-                    [],
-                ),
-
-            "result_only_reg_numbers":
-                summary.get(
-                    "result_only_reg_numbers",
-                    [],
-                ),
-
-            "rows": results,
-        }
-    )
+    return jsonify({
+        "success": True,
+        "job_id": job_id,
+        "course_code": job.get("course_code"),
+        "internal_mark_scale": get_internal_scale(job),
+        "total_students": len(results),
+        "matched_students": summary["matched_students"],
+        "missing_grades": summary["missing_students"],
+        "result_only_students": job.get("summary", {}).get("result_only_students", 0),
+        "missing_grade_reg_numbers": job.get("summary", {}).get("missing_grade_reg_numbers", []),
+        "result_only_reg_numbers": job.get("summary", {}).get("result_only_reg_numbers", []),
+        "summary": summary,
+        "rows": results,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1304,117 +591,86 @@ def get_results(
 # ---------------------------------------------------------------------------
 
 @app.get("/api/export/<job_id>")
-def export_excel(
-    job_id: str,
-):
-    """
-    Generate and download the final Excel workbook.
-    """
-
+def export_excel(job_id: str):
     cleanup_old_jobs()
-
-    job = get_job(
-        job_id
-    )
+    job = get_job(job_id)
 
     if not job:
+        return json_error("Processing session not found or expired.", 404)
 
-        return json_error(
-            "Processing session not found or expired.",
-            404,
-        )
-
-    results = job.get(
-        "results",
-        []
-    )
-
-    course_code = job.get(
-        "course_code"
-    )
-
-    summary = job.get(
-        "summary",
-        {}
-    )
+    results = job.get("results", [])
+    course_code = job.get("course_code")
+    summary = job.get("summary", {})
+    internal_mark_scale = get_internal_scale(job)
 
     if not results:
-
-        return json_error(
-            "There are no processed results to export."
-        )
+        return json_error("There are no processed results to export.")
 
     if not course_code:
+        return json_error("Course code is missing. Please process the result again.")
 
-        return json_error(
-            "Course code is missing. "
-            "Please process the result again."
-        )
-
-    # -----------------------------------------------------------------------
-    # Generate filename
-    # -----------------------------------------------------------------------
-
-    filename = make_excel_filename(
-        course_code
-    )
-
-    output_path = (
-        TEMP_DIR
-        / f"{job_id}_{filename}"
-    )
+    filename = make_excel_filename(course_code)
+    output_path = TEMP_DIR / f"{job_id}_{filename}"
 
     try:
-
-        generated_file = generate_excel(
-            results=results,
-
-            course_code=course_code,
-
-            output_path=output_path,
-
-            summary=summary,
-
-            branch=job.get(
-                "branch",
-                "COMPUTER SCIENCE & ENGINEERING",
-            ),
-
-            semester=job.get(
-                "semester",
-                "",
-            ),
+        # Only pass keyword arguments supported by the currently installed
+        # exporter. This allows the exporter file to be updated in sequence.
+        exporter_parameters = inspect.signature(generate_excel).parameters
+        accepts_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in exporter_parameters.values()
         )
+
+        candidate_kwargs = {
+            "results": results,
+            "rows": results,
+            "course_code": course_code,
+            "output_path": output_path,
+            "summary": summary,
+            "branch": job.get("branch", "COMPUTER SCIENCE & ENGINEERING"),
+            "semester": job.get("semester", ""),
+            "internal_max_mark": internal_mark_scale,
+            "internal_mark_scale": internal_mark_scale,
+        }
+
+        export_kwargs = {}
+        if "results" in exporter_parameters:
+            export_kwargs["results"] = results
+        elif "rows" in exporter_parameters:
+            export_kwargs["rows"] = results
+        elif accepts_kwargs:
+            export_kwargs["results"] = results
+
+        for key in (
+            "course_code",
+            "output_path",
+            "summary",
+            "branch",
+            "semester",
+            "internal_max_mark",
+            "internal_mark_scale",
+        ):
+            if key in exporter_parameters or accepts_kwargs:
+                export_kwargs[key] = candidate_kwargs[key]
+
+        generated_file = generate_excel(**export_kwargs)
 
         return send_file(
             generated_file,
-
             as_attachment=True,
-
             download_name=filename,
-
             mimetype=(
-                "application/vnd.openxmlformats-"
-                "officedocument.spreadsheetml.sheet"
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
             ),
         )
 
     except ExcelExportError as exc:
-
-        return json_error(
-            str(exc)
-        )
+        return json_error(str(exc))
 
     except Exception as exc:
-
-        app.logger.exception(
-            "Unexpected error while generating Excel."
-        )
-
-        return json_error(
-            f"Could not generate Excel file: {exc}",
-            500,
-        )
+        app.logger.exception("Unexpected error while generating Excel.")
+        return json_error(f"Could not generate Excel file: {exc}", 500)
 
 
 # ---------------------------------------------------------------------------
@@ -1422,98 +678,48 @@ def export_excel(
 # ---------------------------------------------------------------------------
 
 @app.delete("/api/session/<job_id>")
-def delete_session(
-    job_id: str,
-):
-    """
-    Delete a processing session and temporary files.
-    """
-
-    job = jobs.pop(
-        job_id,
-        None,
-    )
+def delete_session(job_id: str):
+    job = jobs.pop(job_id, None)
 
     if not job:
+        return json_error("Processing session not found.", 404)
 
-        return json_error(
-            "Processing session not found.",
-            404,
-        )
+    remove_job_files(job)
 
-    remove_file(
-        job.get(
-            "internal_pdf"
-        )
-    )
-
-    remove_file(
-        job.get(
-            "result_pdf"
-        )
-    )
-
-    return jsonify(
-        {
-            "success": True,
-            "message": (
-                "Processing session deleted."
-            ),
-        }
-    )
+    return jsonify({
+        "success": True,
+        "message": "Processing session deleted.",
+    })
 
 
 # ---------------------------------------------------------------------------
-# FILE SIZE ERROR
+# UPLOAD SIZE ERROR
 # ---------------------------------------------------------------------------
 
-@app.errorhandler(
-    413
-)
+@app.errorhandler(413)
 def request_entity_too_large(error):
-    """
-    Handle PDF files larger than MAX_FILE_SIZE.
-    """
-
     return json_error(
-        "The uploaded PDF is too large. "
-        "Maximum allowed size is 20 MB.",
+        "The uploaded PDF is too large. Maximum allowed size is 20 MB.",
         413,
     )
 
 
 # ---------------------------------------------------------------------------
-# GENERAL ERROR HANDLER
+# GENERAL SERVER ERROR
 # ---------------------------------------------------------------------------
 
-@app.errorhandler(
-    500
-)
+@app.errorhandler(500)
 def internal_server_error(error):
-    """
-    Handle unexpected Flask errors.
-    """
-
-    app.logger.exception(
-        "Internal server error."
-    )
-
-    return json_error(
-        "An unexpected server error occurred.",
-        500,
-    )
+    app.logger.exception("Internal server error.")
+    return json_error("An unexpected server error occurred.", 500)
 
 
 # ---------------------------------------------------------------------------
-# APPLICATION START
+# LOCAL DEVELOPMENT ENTRY POINT
 # ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     import os
 
     port = int(os.environ.get("PORT", 5000))
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
-    )
+    app.run(host="0.0.0.0", port=port, debug=False)

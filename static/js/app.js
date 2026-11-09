@@ -1,10 +1,9 @@
 /* =========================================================
-   KTU MARK PROCESSING SYSTEM
+   ANSORA MARK PROCESSING SYSTEM
    Frontend JavaScript
 ========================================================= */
 
 "use strict";
-
 
 /* =========================================================
    GLOBAL STATE
@@ -12,15 +11,12 @@
 
 const state = {
     jobId: null,
-
     internalFile: null,
     resultFile: null,
-
     internalStudents: [],
     resultRows: [],
-
     currentCourseCode: "",
-
+    assessmentScale: null,
     courseSuggestions: []
 };
 
@@ -38,6 +34,10 @@ const $ = (id) => document.getElementById(id);
 
 const internalPdf = $("internalPdf");
 const resultPdf = $("resultPdf");
+
+const internalMarkScale = $("internalMarkScale");
+const selectedAssessmentLabel = $("selectedAssessmentLabel");
+const assessmentHelp = $("assessmentHelp");
 
 const internalDropZone = $("internalDropZone");
 const resultDropZone = $("resultDropZone");
@@ -70,9 +70,11 @@ const resultSearch = $("resultSearch");
 const gradeFilter = $("gradeFilter");
 
 const resultsTableBody = $("resultsTableBody");
+const resultTableHeadRow = $("resultTableHeadRow");
+const dynamicGradeHeader = $("dynamicGradeHeader");
+const universityMarkHeader = $("universityMarkHeader");
 
 const exportButton = $("exportButton");
-
 const startNewButton = $("startNewButton");
 
 const messageBox = $("messageBox");
@@ -94,7 +96,6 @@ const internalPreviewBody = $("internalPreviewBody");
 const resultSection = $("resultSection");
 const resultsSection = $("resultsSection");
 
-const dynamicGradeHeader = $("dynamicGradeHeader");
 const resultTableTitle = $("resultTableTitle");
 const resultRecordCount = $("resultRecordCount");
 
@@ -132,6 +133,8 @@ document.addEventListener("DOMContentLoaded", () => {
     setupFormEvents();
 
     updateProcessCourseLabel();
+    updateAssessmentUI();
+    updateResultTableColumns();
 
 });
 
@@ -143,57 +146,30 @@ document.addEventListener("DOMContentLoaded", () => {
 function setupFileInputEvents() {
 
     internalBrowseButton.addEventListener("click", (event) => {
-
         event.stopPropagation();
-
         internalPdf.click();
-
     });
-
 
     resultBrowseButton.addEventListener("click", (event) => {
-
         event.stopPropagation();
-
         resultPdf.click();
-
     });
-
 
     internalPdf.addEventListener("change", () => {
-
         if (internalPdf.files.length > 0) {
-
             handleInternalFile(internalPdf.files[0]);
-
         }
-
     });
-
 
     resultPdf.addEventListener("change", () => {
-
         if (resultPdf.files.length > 0) {
-
             handleResultFile(resultPdf.files[0]);
-
         }
-
     });
 
+    removeInternalFile.addEventListener("click", clearInternalFile);
 
-    removeInternalFile.addEventListener("click", () => {
-
-        clearInternalFile();
-
-    });
-
-
-    removeResultFile.addEventListener("click", () => {
-
-        clearResultFile();
-
-    });
+    removeResultFile.addEventListener("click", clearResultFile);
 
 }
 
@@ -204,27 +180,12 @@ function setupFileInputEvents() {
 
 function setupDropZones() {
 
-    configureDropZone(
-        internalDropZone,
-        (file) => {
-            handleInternalFile(file);
-        }
-    );
-
-
-    configureDropZone(
-        resultDropZone,
-        (file) => {
-            handleResultFile(file);
-        }
-    );
+    configureDropZone(internalDropZone, handleInternalFile);
+    configureDropZone(resultDropZone, handleResultFile);
 
 }
 
 
-/**
- * Attach drag/drop events to a zone.
- */
 function configureDropZone(zone, onFile) {
 
     zone.addEventListener("click", (event) => {
@@ -236,51 +197,36 @@ function configureDropZone(zone, onFile) {
             return;
         }
 
-        const associatedInput =
+        const input =
             zone === internalDropZone
                 ? internalPdf
                 : resultPdf;
 
-        associatedInput.click();
+        input.click();
 
     });
-
 
     zone.addEventListener("dragenter", (event) => {
-
         event.preventDefault();
-
         zone.classList.add("dragging");
-
     });
-
 
     zone.addEventListener("dragover", (event) => {
-
         event.preventDefault();
-
         zone.classList.add("dragging");
-
     });
 
-
     zone.addEventListener("dragleave", (event) => {
-
         event.preventDefault();
 
         if (!zone.contains(event.relatedTarget)) {
-
             zone.classList.remove("dragging");
-
         }
-
     });
-
 
     zone.addEventListener("drop", (event) => {
 
         event.preventDefault();
-
         zone.classList.remove("dragging");
 
         const files = event.dataTransfer.files;
@@ -307,30 +253,25 @@ function setupButtonEvents() {
         uploadInternalPdf
     );
 
-
     processResultButton.addEventListener(
         "click",
         processResultPdf
     );
-
 
     changeCourseButton.addEventListener(
         "click",
         changeCourse
     );
 
-
     exportButton.addEventListener(
         "click",
         handleExport
     );
 
-
     startNewButton.addEventListener(
         "click",
         resetEverything
     );
-
 
     messageClose.addEventListener(
         "click",
@@ -346,16 +287,23 @@ function setupButtonEvents() {
 
 function setupFormEvents() {
 
+    internalMarkScale.addEventListener("change", () => {
+
+        state.assessmentScale =
+            Number(internalMarkScale.value) || null;
+
+        updateAssessmentUI();
+
+    });
+
+
     courseCode.addEventListener("input", () => {
 
-        courseCode.value =
+        courseCode.value = normalizeCourseCode(
             courseCode.value
-                .toUpperCase()
-                .replace(/\s+/g, "")
-                .trim();
+        );
 
         updateProcessCourseLabel();
-
         updateCourseInputStatus();
 
     });
@@ -364,11 +312,8 @@ function setupFormEvents() {
     courseCode.addEventListener("keydown", (event) => {
 
         if (event.key === "Enter") {
-
             event.preventDefault();
-
             processResultPdf();
-
         }
 
     });
@@ -376,11 +321,9 @@ function setupFormEvents() {
 
     changeCourseCode.addEventListener("input", () => {
 
-        changeCourseCode.value =
+        changeCourseCode.value = normalizeCourseCode(
             changeCourseCode.value
-                .toUpperCase()
-                .replace(/\s+/g, "")
-                .trim();
+        );
 
     });
 
@@ -388,11 +331,8 @@ function setupFormEvents() {
     changeCourseCode.addEventListener("keydown", (event) => {
 
         if (event.key === "Enter") {
-
             event.preventDefault();
-
             changeCourse();
-
         }
 
     });
@@ -419,51 +359,33 @@ function setupFormEvents() {
 function validatePdf(file) {
 
     if (!file) {
-
         return {
             valid: false,
             message: "Please select a PDF file."
         };
-
     }
-
-
-    const fileName =
-        file.name.toLowerCase();
-
 
     const isPdf =
         file.type === "application/pdf" ||
-        fileName.endsWith(".pdf");
-
+        file.name.toLowerCase().endsWith(".pdf");
 
     if (!isPdf) {
-
         return {
             valid: false,
             message: "Only PDF files are allowed."
         };
-
     }
 
-
-    const maxBytes =
-        20 * 1024 * 1024;
-
+    const maxBytes = 20 * 1024 * 1024;
 
     if (file.size > maxBytes) {
-
         return {
             valid: false,
             message: "The PDF must be smaller than 20 MB."
         };
-
     }
 
-
-    return {
-        valid: true
-    };
+    return { valid: true };
 
 }
 
@@ -474,9 +396,7 @@ function validatePdf(file) {
 
 function handleInternalFile(file) {
 
-    const validation =
-        validatePdf(file);
-
+    const validation = validatePdf(file);
 
     if (!validation.valid) {
 
@@ -487,24 +407,16 @@ function handleInternalFile(file) {
         );
 
         return;
-
     }
-
 
     state.internalFile = file;
 
-    internalFileName.textContent =
-        file.name;
+    internalFileName.textContent = file.name;
+    internalFileSize.textContent = formatFileSize(file.size);
 
-    internalFileSize.textContent =
-        formatFileSize(file.size);
+    internalSelectedFile.classList.remove("hidden");
 
-    internalSelectedFile.classList.remove(
-        "hidden"
-    );
-
-    uploadInternalButton.disabled = false;
-
+    updateAssessmentUI();
     hideMessage();
 
 }
@@ -513,12 +425,11 @@ function handleInternalFile(file) {
 function clearInternalFile() {
 
     state.internalFile = null;
-
     internalPdf.value = "";
 
-    internalSelectedFile.classList.add(
-        "hidden"
-    );
+    internalSelectedFile.classList.add("hidden");
+
+    updateAssessmentUI();
 
 }
 
@@ -529,9 +440,7 @@ function clearInternalFile() {
 
 function handleResultFile(file) {
 
-    const validation =
-        validatePdf(file);
-
+    const validation = validatePdf(file);
 
     if (!validation.valid) {
 
@@ -542,26 +451,17 @@ function handleResultFile(file) {
         );
 
         return;
-
     }
-
 
     state.resultFile = file;
 
-    resultFileName.textContent =
-        file.name;
+    resultFileName.textContent = file.name;
+    resultFileSize.textContent = formatFileSize(file.size);
 
-    resultFileSize.textContent =
-        formatFileSize(file.size);
-
-    resultSelectedFile.classList.remove(
-        "hidden"
-    );
+    resultSelectedFile.classList.remove("hidden");
 
     hideMessage();
 
-
-    // Try to extract CSE course code suggestions.
     loadCourseSuggestions();
 
 }
@@ -570,20 +470,84 @@ function handleResultFile(file) {
 function clearResultFile() {
 
     state.resultFile = null;
-
     resultPdf.value = "";
 
-    resultSelectedFile.classList.add(
-        "hidden"
-    );
-
-    courseSuggestionsSection.classList.add(
-        "hidden"
-    );
+    resultSelectedFile.classList.add("hidden");
+    courseSuggestionsSection.classList.add("hidden");
 
     courseSuggestions.innerHTML = "";
-
     state.courseSuggestions = [];
+
+}
+
+
+/* =========================================================
+   ASSESSMENT TYPE
+========================================================= */
+
+function getAssessmentLabel(scale = state.assessmentScale) {
+
+    const value = Number(scale);
+
+    if (value === 50) {
+        return "50 Marks – Regular Internal";
+    }
+
+    if (value === 75) {
+        return "75 Marks – Laboratory";
+    }
+
+    if (value === 100) {
+        return "100 Marks – Project";
+    }
+
+    return "—";
+
+}
+
+
+function updateAssessmentUI() {
+
+    const scale = Number(
+        internalMarkScale.value ||
+        state.assessmentScale ||
+        0
+    );
+
+    if (scale === 50) {
+
+        assessmentHelp.textContent =
+            "Regular internal assessment: University Mark and CO1–CO8 will be calculated.";
+
+    } else if (scale === 75 || scale === 100) {
+
+        assessmentHelp.textContent =
+            "University Mark will be calculated. CO1–CO8 are not calculated for laboratory or project assessments.";
+
+    } else {
+
+        assessmentHelp.textContent =
+            "For 50-mark assessments, University Mark and CO1–CO8 will be calculated. For 75- and 100-mark assessments, only University Mark will be calculated.";
+
+    }
+
+    selectedAssessmentLabel.textContent =
+        getAssessmentLabel(scale);
+
+    uploadInternalButton.disabled =
+        Boolean(state.jobId) ||
+        !state.internalFile ||
+        !scale;
+
+}
+
+
+function usesCOColumns() {
+
+    return Number(
+        state.assessmentScale ||
+        internalMarkScale.value
+    ) === 50;
 
 }
 
@@ -594,11 +558,24 @@ function clearResultFile() {
 
 async function uploadInternalPdf() {
 
+    if (!internalMarkScale.value) {
+
+        showMessage(
+            "Assessment Type Required",
+            "Please select 50, 75 or 100 marks before uploading the internal PDF.",
+            "error"
+        );
+
+        internalMarkScale.focus();
+        return;
+
+    }
+
     if (!state.internalFile) {
 
         showMessage(
             "Internal PDF Required",
-            "Please select the Student Examination Eligibility Details PDF first.",
+            "Please select the internal marks PDF first.",
             "error"
         );
 
@@ -606,10 +583,7 @@ async function uploadInternalPdf() {
 
     }
 
-
-    const validation =
-        validatePdf(state.internalFile);
-
+    const validation = validatePdf(state.internalFile);
 
     if (!validation.valid) {
 
@@ -623,15 +597,19 @@ async function uploadInternalPdf() {
 
     }
 
-
-    const formData =
-        new FormData();
+    const formData = new FormData();
 
     formData.append(
         "internal_pdf",
         state.internalFile
     );
 
+    state.assessmentScale = Number(internalMarkScale.value);
+
+    formData.append(
+        "internal_mark_scale",
+        String(state.assessmentScale)
+    );
 
     setLoading(
         true,
@@ -639,88 +617,63 @@ async function uploadInternalPdf() {
         "Extracting registration numbers and internal marks from the PDF..."
     );
 
-
     uploadInternalButton.disabled = true;
-
 
     try {
 
-        const response =
-            await fetch(
-                "/api/upload-internal",
-                {
-                    method: "POST",
-                    body: formData
-                }
-            );
+        const response = await fetch(
+            "/api/upload-internal",
+            {
+                method: "POST",
+                body: formData
+            }
+        );
 
-
-        const data =
-            await parseJsonResponse(response);
-
+        const data = await parseJsonResponse(response);
 
         if (!response.ok) {
-
             throw new Error(
                 data.error ||
                 "Unable to process the internal PDF."
             );
-
         }
 
+        state.jobId = data.job_id;
 
-        state.jobId =
-            data.job_id;
+        state.assessmentScale = Number(
+            data.internal_mark_scale ??
+            data.assessment_scale ??
+            internalMarkScale.value
+        );
 
+        internalMarkScale.disabled = true;
+
+        updateAssessmentUI();
 
         state.internalStudents =
             Array.isArray(data.students)
                 ? data.students
                 : [];
 
-
         renderInternalPreview();
 
+        const count = Number(
+            data.student_count ||
+            state.internalStudents.length ||
+            0
+        );
 
-        const count =
-            Number(
-                data.student_count ||
-                state.internalStudents.length ||
-                0
-            );
-
-
-        studentCount.textContent =
-            count.toString();
-
-
-        previewCount.textContent =
-            `${count} records`;
-
+        studentCount.textContent = count.toString();
+        previewCount.textContent = `${count} records`;
 
         internalResultText.textContent =
             `${count} students were extracted successfully.`;
 
+        internalResult.classList.remove("hidden");
+        resultSection.classList.remove("hidden");
 
-        internalResult.classList.remove(
-            "hidden"
-        );
-
-
-        resultSection.classList.remove(
-            "hidden"
-        );
-
-
-        markWorkflowStepComplete(
-            workflowStep1
-        );
-
-
-        activateWorkflowStep(
-            workflowStep2
-        );
-
+        markWorkflowStepComplete(workflowStep1);
+        activateWorkflowStep(workflowStep2);
 
         showMessage(
             "Internal PDF Processed",
@@ -728,12 +681,10 @@ async function uploadInternalPdf() {
             "success"
         );
 
-
         resultSection.scrollIntoView({
             behavior: "smooth",
             block: "start"
         });
-
 
     } catch (error) {
 
@@ -767,99 +718,60 @@ async function loadCourseSuggestions() {
         return;
     }
 
-
-    const formData =
-        new FormData();
-
+    const formData = new FormData();
 
     formData.append(
         "result_pdf",
         state.resultFile
     );
 
+    courseSuggestionsSection.classList.remove("hidden");
 
-    courseSuggestionsSection.classList.remove(
-        "hidden"
-    );
-
-
-    suggestionLoading.textContent =
-        "Checking PDF...";
-
+    suggestionLoading.textContent = "Checking PDF...";
 
     try {
 
-        const response =
-            await fetch(
-                "/api/course-codes",
-                {
-                    method: "POST",
-                    body: formData
-                }
-            );
+        const response = await fetch(
+            "/api/course-codes",
+            {
+                method: "POST",
+                body: formData
+            }
+        );
 
-
-        const data =
-            await parseJsonResponse(response);
-
+        const data = await parseJsonResponse(response);
 
         if (!response.ok) {
-
             throw new Error(
                 data.error ||
                 "Unable to read course codes."
             );
-
         }
 
-
-        /*
-         * Support the different common response
-         * shapes in case the backend returns one
-         * of these keys.
-         */
         let codes = [];
 
-
         if (Array.isArray(data.course_codes)) {
-
-            codes =
-                data.course_codes;
-
+            codes = data.course_codes;
         } else if (Array.isArray(data.courses)) {
-
-            codes =
-                data.courses;
-
+            codes = data.courses;
         } else if (Array.isArray(data)) {
-
-            codes =
-                data;
-
+            codes = data;
         }
 
-
-        state.courseSuggestions =
-            codes
-                .map(normalizeCourseCode)
-                .filter(Boolean);
-
+        state.courseSuggestions = codes
+            .map(normalizeCourseCode)
+            .filter(Boolean);
 
         renderCourseSuggestions();
-
 
         suggestionLoading.textContent =
             state.courseSuggestions.length > 0
                 ? `${state.courseSuggestions.length} found`
                 : "No codes found";
 
-
     } catch (error) {
 
-        console.error(
-            "Course suggestion error:",
-            error
-        );
+        console.error("Course suggestion error:", error);
 
         courseSuggestions.innerHTML = "";
 
@@ -872,49 +784,33 @@ async function loadCourseSuggestions() {
 
 
 /* =========================================================
-   COURSE SUGGESTIONS RENDER
+   RENDER COURSE SUGGESTIONS
 ========================================================= */
 
 function renderCourseSuggestions() {
 
     courseSuggestions.innerHTML = "";
 
-
     state.courseSuggestions.forEach((code) => {
 
-        const button =
-            document.createElement("button");
-
+        const button = document.createElement("button");
 
         button.type = "button";
+        button.className = "course-chip";
+        button.textContent = code;
 
-        button.className =
-            "course-chip";
+        button.addEventListener("click", () => {
 
-        button.textContent =
-            code;
+            courseCode.value = code;
 
+            updateProcessCourseLabel();
+            updateCourseInputStatus();
 
-        button.addEventListener(
-            "click",
-            () => {
+            courseCode.focus();
 
-                courseCode.value =
-                    code;
+        });
 
-                updateProcessCourseLabel();
-
-                updateCourseInputStatus();
-
-                courseCode.focus();
-
-            }
-        );
-
-
-        courseSuggestions.appendChild(
-            button
-        );
+        courseSuggestions.appendChild(button);
 
     });
 
@@ -922,7 +818,7 @@ function renderCourseSuggestions() {
 
 
 /* =========================================================
-   RESULT PROCESSING
+   PROCESS RESULT PDF
 ========================================================= */
 
 async function processResultPdf() {
@@ -931,7 +827,7 @@ async function processResultPdf() {
 
         showMessage(
             "Internal PDF Not Ready",
-            "Please upload and process the internal mark PDF first.",
+            "Please upload and process the internal marks PDF first.",
             "error"
         );
 
@@ -939,12 +835,8 @@ async function processResultPdf() {
 
     }
 
-
     const enteredCourse =
-        normalizeCourseCode(
-            courseCode.value
-        );
-
+        normalizeCourseCode(courseCode.value);
 
     if (!enteredCourse) {
 
@@ -955,32 +847,28 @@ async function processResultPdf() {
         );
 
         courseCode.focus();
-
         return;
 
     }
-
 
     if (!/^[A-Z]{2,6}\d{3}$/i.test(enteredCourse)) {
 
         showMessage(
             "Invalid Course Code",
-            "Please enter a valid KTU-style course code, for example CST309.",
+            "Please enter a valid course code, for example CST309.",
             "error"
         );
 
         courseCode.focus();
-
         return;
 
     }
-
 
     if (!state.resultFile) {
 
         showMessage(
             "Result PDF Required",
-            "Please select the KTU result PDF before processing.",
+            "Please select the result PDF before processing.",
             "error"
         );
 
@@ -988,102 +876,66 @@ async function processResultPdf() {
 
     }
 
+    const formData = new FormData();
 
-    const formData =
-        new FormData();
-
-
-    formData.append(
-        "job_id",
-        state.jobId
-    );
-
-
-    formData.append(
-        "course_code",
-        enteredCourse
-    );
-
-
-    formData.append(
-        "result_pdf",
-        state.resultFile
-    );
-
+    formData.append("job_id", state.jobId);
+    formData.append("course_code", enteredCourse);
+    formData.append("result_pdf", state.resultFile);
 
     setLoading(
         true,
         `Processing ${enteredCourse}`,
-        "Reading the Computer Science & Engineering section and matching grades..."
+        "Reading the result PDF and matching student grades..."
     );
-
 
     processResultButton.disabled = true;
 
-
     try {
 
-        const response =
-            await fetch(
-                "/api/process-result",
-                {
-                    method: "POST",
-                    body: formData
-                }
-            );
+        const response = await fetch(
+            "/api/process-result",
+            {
+                method: "POST",
+                body: formData
+            }
+        );
 
-
-        const data =
-            await parseJsonResponse(response);
-
+        const data = await parseJsonResponse(response);
 
         if (!response.ok) {
-
             throw new Error(
                 data.error ||
                 "Unable to process the result PDF."
             );
-
         }
-
 
         state.currentCourseCode =
             normalizeCourseCode(
-                data.course_code ||
-                enteredCourse
+                data.course_code || enteredCourse
             );
 
+        state.assessmentScale = Number(
+            data.internal_mark_scale ||
+            state.assessmentScale
+        );
 
         state.resultRows =
             Array.isArray(data.rows)
                 ? data.rows
                 : [];
 
+        renderResults(data.summary);
 
-        renderResults(
-            data.summary
-        );
-
-
-        markWorkflowStepComplete(
-            workflowStep2
-        );
-
-
-        activateWorkflowStep(
-            workflowStep3
-        );
-
+        markWorkflowStepComplete(workflowStep2);
+        activateWorkflowStep(workflowStep3);
 
         showResultsSection();
 
-
         showMessage(
             "Results Processed",
-            `${state.resultRows.length} student records have been matched for ${state.currentCourseCode}.`,
+            `${state.resultRows.length} student records have been processed for ${state.currentCourseCode}.`,
             "success"
         );
-
 
     } catch (error) {
 
@@ -1099,7 +951,6 @@ async function processResultPdf() {
     } finally {
 
         processResultButton.disabled = false;
-
         setLoading(false);
 
     }
@@ -1108,7 +959,7 @@ async function processResultPdf() {
 
 
 /* =========================================================
-   CHANGE COURSE
+   CHANGE COURSE CODE
 ========================================================= */
 
 async function changeCourse() {
@@ -1125,12 +976,8 @@ async function changeCourse() {
 
     }
 
-
     const newCourse =
-        normalizeCourseCode(
-            changeCourseCode.value
-        );
-
+        normalizeCourseCode(changeCourseCode.value);
 
     if (!newCourse) {
 
@@ -1141,26 +988,22 @@ async function changeCourse() {
         );
 
         changeCourseCode.focus();
-
         return;
 
     }
-
 
     if (!/^[A-Z]{2,6}\d{3}$/i.test(newCourse)) {
 
         showMessage(
             "Invalid Course Code",
-            "Please enter a valid KTU-style course code.",
+            "Please enter a valid course code.",
             "error"
         );
 
         changeCourseCode.focus();
-
         return;
 
     }
-
 
     setLoading(
         true,
@@ -1168,76 +1011,57 @@ async function changeCourse() {
         "Reusing the stored result PDF and matching the new course..."
     );
 
-
     changeCourseButton.disabled = true;
-
 
     try {
 
-        const response =
-            await fetch(
-                "/api/change-course",
-                {
-                    method: "POST",
+        const response = await fetch(
+            "/api/change-course",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    job_id: state.jobId,
+                    course_code: newCourse
+                })
+            }
+        );
 
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: JSON.stringify({
-                        job_id:
-                            state.jobId,
-
-                        course_code:
-                            newCourse
-                    })
-                }
-            );
-
-
-        const data =
-            await parseJsonResponse(response);
-
+        const data = await parseJsonResponse(response);
 
         if (!response.ok) {
-
             throw new Error(
                 data.error ||
                 "Unable to change the course."
             );
-
         }
-
 
         state.currentCourseCode =
             normalizeCourseCode(
-                data.course_code ||
-                newCourse
+                data.course_code || newCourse
             );
 
+        state.assessmentScale = Number(
+            data.internal_mark_scale ||
+            state.assessmentScale
+        );
 
         state.resultRows =
             Array.isArray(data.rows)
                 ? data.rows
                 : [];
 
+        renderResults(data.summary);
 
-        renderResults(
-            data.summary
-        );
-
-
-        changeCourseCode.value =
-            "";
-
+        changeCourseCode.value = "";
 
         showMessage(
             "Course Changed",
             `Results are now displayed for ${state.currentCourseCode}.`,
             "success"
         );
-
 
     } catch (error) {
 
@@ -1253,7 +1077,6 @@ async function changeCourse() {
     } finally {
 
         changeCourseButton.disabled = false;
-
         setLoading(false);
 
     }
@@ -1262,51 +1085,40 @@ async function changeCourse() {
 
 
 /* =========================================================
-   RENDER INTERNAL PREVIEW
+   INTERNAL STUDENT PREVIEW
 ========================================================= */
 
 function renderInternalPreview() {
 
     internalPreviewBody.innerHTML = "";
 
-
     const previewStudents =
         state.internalStudents.slice(0, 12);
 
+    previewStudents.forEach((student, index) => {
 
-    previewStudents.forEach(
-        (student, index) => {
+        const row = document.createElement("tr");
 
-            const row =
-                document.createElement("tr");
+        const regNo =
+            student.reg_no ??
+            student.registration_number ??
+            student.registration_no ??
+            "";
 
+        const mark =
+            student.internal_mark ??
+            student.mark ??
+            "";
 
-            const regNo =
-                student.reg_no ??
-                student.registration_number ??
-                student.registration_no ??
-                "";
+        row.innerHTML = `
+            <td>${escapeHtml(index + 1)}</td>
+            <td>${escapeHtml(regNo)}</td>
+            <td class="mark-value">${escapeHtml(mark)}</td>
+        `;
 
+        internalPreviewBody.appendChild(row);
 
-            const mark =
-                student.internal_mark ??
-                student.mark ??
-                "";
-
-
-            row.innerHTML = `
-                <td>${escapeHtml(index + 1)}</td>
-                <td>${escapeHtml(regNo)}</td>
-                <td class="mark-value">${escapeHtml(mark)}</td>
-            `;
-
-
-            internalPreviewBody.appendChild(
-                row
-            );
-
-        }
-    );
+    });
 
 }
 
@@ -1318,21 +1130,17 @@ function renderInternalPreview() {
 function renderResults(summary) {
 
     const course =
-        state.currentCourseCode ||
-        "—";
-
+        state.currentCourseCode || "—";
 
     dynamicGradeHeader.textContent =
         `${course} Grade`;
 
-
     resultTableTitle.textContent =
         `${course} Results`;
 
+    summaryCourse.textContent = course;
 
-    summaryCourse.textContent =
-        course;
-
+    updateResultTableColumns();
 
     if (summary) {
 
@@ -1342,14 +1150,12 @@ function renderResults(summary) {
                 state.resultRows.length
             );
 
-
         summaryMatched.textContent =
             formatInteger(
                 summary.matched_students ??
                 summary.matched ??
                 countMatchedRows()
             );
-
 
         summaryMissing.textContent =
             formatInteger(
@@ -1361,36 +1167,195 @@ function renderResults(summary) {
     } else {
 
         summaryTotal.textContent =
-            formatInteger(
-                state.resultRows.length
-            );
-
+            formatInteger(state.resultRows.length);
 
         summaryMatched.textContent =
-            formatInteger(
-                countMatchedRows()
-            );
-
+            formatInteger(countMatchedRows());
 
         summaryMissing.textContent =
-            formatInteger(
-                countMissingRows()
-            );
+            formatInteger(countMissingRows());
 
     }
 
-
     renderFilteredResults();
-
-    renderMissingStudents(
-        summary
-    );
-
+    renderMissingStudents(summary);
 
     if (state.jobId) {
-
         exportButton.href =
             `/api/export/${encodeURIComponent(state.jobId)}`;
+    }
+
+}
+
+
+/* =========================================================
+   DYNAMIC TABLE COLUMNS
+========================================================= */
+
+function updateResultTableColumns() {
+
+    if (!resultTableHeadRow || !universityMarkHeader) {
+        return;
+    }
+
+    // Remove CO headers before rebuilding the table.
+    resultTableHeadRow
+        .querySelectorAll("[data-co-header]")
+        .forEach(header => header.remove());
+
+    // University Mark is displayed for every assessment type.
+    universityMarkHeader.hidden = false;
+
+    // CO1–CO8 are only displayed for regular internal assessments.
+    if (usesCOColumns()) {
+
+        for (let co = 1; co <= 8; co++) {
+
+            const header = document.createElement("th");
+
+            header.textContent = `CO${co}`;
+            header.dataset.coHeader = String(co);
+
+            resultTableHeadRow.appendChild(header);
+
+        }
+
+    }
+
+}
+
+
+function usesCOColumns() {
+
+    return Number(
+        state.assessmentScale ||
+        internalMarkScale.value
+    ) === 50;
+
+}
+
+
+/* =========================================================
+   FILTER AND SEARCH RESULTS
+========================================================= */
+
+function renderFilteredResults() {
+
+    const query =
+        resultSearch.value.trim().toLowerCase();
+
+    const selectedGrade =
+        gradeFilter.value;
+
+    const filtered = state.resultRows.filter((row) => {
+
+        const regNo = String(
+            row.reg_no ??
+            row.registration_number ??
+            ""
+        ).toLowerCase();
+
+        const grade = normalizeGrade(row.grade);
+
+        const gradeMatches =
+            selectedGrade === "ALL" ||
+            grade === selectedGrade.toUpperCase();
+
+        const queryMatches =
+            !query ||
+            regNo.includes(query) ||
+            grade.toLowerCase().includes(query);
+
+        return gradeMatches && queryMatches;
+
+    });
+
+    resultsTableBody.innerHTML = "";
+
+    filtered.forEach((row, index) => {
+
+        const tr = document.createElement("tr");
+
+        const regNo =
+            row.reg_no ??
+            row.registration_number ??
+            "";
+
+        const internalMark =
+            row.internal_mark ??
+            row.mark ??
+            "";
+
+        const grade = normalizeGrade(row.grade);
+
+        const universityMark = getFirstDefined(
+            row.university_mark,
+            row.universityMark,
+            row.university_mark_value
+        );
+
+        let cells = `
+            <td>${escapeHtml(index + 1)}</td>
+
+            <td>
+                <strong>${escapeHtml(regNo)}</strong>
+            </td>
+
+            <td class="mark-value">
+                ${escapeHtml(internalMark)}
+            </td>
+
+            <td>
+                ${createGradeBadge(grade)}
+            </td>
+
+            <td class="mark-value">
+                ${escapeHtml(displayCellValue(universityMark, grade))}
+            </td>
+        `;
+
+        // Add CO1–CO8 only for 50-mark assessments.
+        if (usesCOColumns()) {
+
+            for (let co = 1; co <= 8; co++) {
+
+                const coValue = getFirstDefined(
+                    row[`co${co}`],
+                    row[`co_${co}`],
+                    row[`CO${co}`]
+                );
+
+                cells += `
+                    <td class="mark-value co-value">
+                        ${escapeHtml(displayCellValue(coValue, grade))}
+                    </td>
+                `;
+
+            }
+
+        }
+
+        tr.innerHTML = cells;
+
+        resultsTableBody.appendChild(tr);
+
+    });
+
+    resultRecordCount.textContent =
+        `${filtered.length} of ${state.resultRows.length} records`;
+
+    const tableScroll =
+        document.querySelector(".table-scroll.large");
+
+    if (filtered.length === 0) {
+
+        emptySearchState.classList.remove("hidden");
+        tableScroll?.classList.add("hidden");
+
+    } else {
+
+        emptySearchState.classList.add("hidden");
+        tableScroll?.classList.remove("hidden");
 
     }
 
@@ -1398,143 +1363,31 @@ function renderResults(summary) {
 
 
 /* =========================================================
-   FILTER + SEARCH
+   TABLE VALUE HELPERS
 ========================================================= */
 
-function renderFilteredResults() {
+function getFirstDefined(...values) {
 
-    const query =
-        resultSearch.value
-            .trim()
-            .toLowerCase();
-
-
-    const selectedGrade =
-        gradeFilter.value;
-
-
-    const filtered =
-        state.resultRows.filter(
-            (row) => {
-
-                const regNo =
-                    String(
-                        row.reg_no ??
-                        row.registration_number ??
-                        ""
-                    )
-                    .toLowerCase();
-
-
-                const grade =
-                    normalizeGrade(
-                        row.grade
-                    );
-
-
-                const gradeMatches =
-                    selectedGrade === "ALL" ||
-                    grade ===
-                        selectedGrade.toUpperCase();
-
-
-                const queryMatches =
-                    !query ||
-                    regNo.includes(query) ||
-                    grade.toLowerCase().includes(query);
-
-
-                return (
-                    gradeMatches &&
-                    queryMatches
-                );
-
-            }
-        );
-
-
-    resultsTableBody.innerHTML = "";
-
-
-    filtered.forEach(
-        (row, index) => {
-
-            const tr =
-                document.createElement("tr");
-
-
-            const regNo =
-                row.reg_no ??
-                row.registration_number ??
-                "";
-
-
-            const internalMark =
-                row.internal_mark ??
-                row.mark ??
-                "";
-
-
-            const grade =
-                normalizeGrade(
-                    row.grade
-                );
-
-
-            tr.innerHTML = `
-                <td>${escapeHtml(index + 1)}</td>
-
-                <td>
-                    <strong>
-                        ${escapeHtml(regNo)}
-                    </strong>
-                </td>
-
-                <td class="mark-value">
-                    ${escapeHtml(internalMark)}
-                </td>
-
-                <td>
-                    ${createGradeBadge(grade)}
-                </td>
-            `;
-
-
-            resultsTableBody.appendChild(
-                tr
-            );
-
-        }
+    return values.find(
+        value => value !== undefined && value !== null
     );
 
-
-    resultRecordCount.textContent =
-        `${filtered.length} of ${state.resultRows.length} records`;
+}
 
 
-    if (filtered.length === 0) {
+function displayCellValue(value, grade) {
 
-        emptySearchState.classList.remove(
-            "hidden"
-        );
-
-        document
-            .querySelector(".table-scroll.large")
-            ?.classList
-            .add("hidden");
-
-    } else {
-
-        emptySearchState.classList.add(
-            "hidden"
-        );
-
-        document
-            .querySelector(".table-scroll.large")
-            ?.classList
-            .remove("hidden");
-
+    // Do not show derived marks for missing or absent grades.
+    if (
+        grade === "Not Found" ||
+        grade === "Absent"
+    ) {
+        return "";
     }
+
+    return value === undefined || value === null
+        ? ""
+        : value;
 
 }
 
@@ -1545,77 +1398,49 @@ function renderFilteredResults() {
 
 function renderMissingStudents(summary) {
 
-    let missing =
-        [];
-
+    let missing = [];
 
     if (
         summary &&
         Array.isArray(summary.missing_reg_nos)
     ) {
 
-        missing =
-            summary.missing_reg_nos;
+        missing = summary.missing_reg_nos;
 
     } else {
 
-        missing =
-            state.resultRows
-                .filter(
-                    row =>
-                        normalizeGrade(row.grade) ===
-                        "NOT FOUND"
-                )
-                .map(
-                    row =>
-                        row.reg_no ??
-                        row.registration_number ??
-                        ""
-                );
+        missing = state.resultRows
+            .filter(row =>
+                normalizeGrade(row.grade) === "Not Found"
+            )
+            .map(row =>
+                row.reg_no ??
+                row.registration_number ??
+                ""
+            );
 
     }
-
 
     mismatchCount.textContent =
         missing.length.toString();
 
-
     missingStudentsList.innerHTML = "";
-
 
     missing.forEach((regNo) => {
 
-        const item =
-            document.createElement("span");
+        const item = document.createElement("span");
 
+        item.className = "missing-student";
+        item.textContent = regNo;
 
-        item.className =
-            "missing-student";
-
-
-        item.textContent =
-            regNo;
-
-
-        missingStudentsList.appendChild(
-            item
-        );
+        missingStudentsList.appendChild(item);
 
     });
 
-
     if (missing.length > 0) {
-
-        mismatchPanel.classList.remove(
-            "hidden"
-        );
-
+        mismatchPanel.classList.remove("hidden");
     } else {
-
-        mismatchPanel.classList.add(
-            "hidden"
-        );
-
+        mismatchPanel.classList.add("hidden");
     }
 
 }
@@ -1627,73 +1452,61 @@ function renderMissingStudents(summary) {
 
 function createGradeBadge(grade) {
 
-    const normalized =
-        normalizeGrade(grade);
+    const normalized = normalizeGrade(grade);
 
+    let className = "grade-not-found";
 
-    let className =
-        "grade-not-found";
+    if (normalized === "S") {
 
+        className = "grade-s";
 
-    if (normalized === "A+") {
+    } else if (normalized === "A+") {
 
-        className =
-            "grade-a-plus";
+        className = "grade-a-plus";
 
     } else if (normalized === "A") {
 
-        className =
-            "grade-a";
+        className = "grade-a";
 
     } else if (normalized === "B+") {
 
-        className =
-            "grade-b-plus";
+        className = "grade-b-plus";
 
     } else if (normalized === "B") {
 
-        className =
-            "grade-b";
+        className = "grade-b";
 
     } else if (normalized === "C+") {
 
-        className =
-            "grade-c-plus";
+        className = "grade-c-plus";
 
     } else if (normalized === "C") {
 
-        className =
-            "grade-c";
+        className = "grade-c";
 
     } else if (normalized === "D") {
 
-        className =
-            "grade-d";
+        className = "grade-d";
 
     } else if (normalized === "P") {
 
-        className =
-            "grade-p";
-
-    } else if (normalized === "F") {
-
-        className =
-            "grade-f";
+        className = "grade-p";
 
     } else if (
-        normalized === "ABSENT"
+        normalized === "F" ||
+        normalized === "FE"
     ) {
 
-        className =
-            "grade-absent";
+        className = "grade-f";
+
+    } else if (normalized === "Absent") {
+
+        className = "grade-absent";
 
     }
 
-
     return `
-        <span
-            class="grade-badge ${className}"
-        >
+        <span class="grade-badge ${className}">
             ${escapeHtml(normalized)}
         </span>
     `;
@@ -1707,21 +1520,24 @@ function createGradeBadge(grade) {
 
 function countMatchedRows() {
 
-    return state.resultRows.filter(
-        row =>
-            normalizeGrade(row.grade) !==
-            "NOT FOUND"
-    ).length;
+    return state.resultRows.filter(row => {
+
+        const grade = normalizeGrade(row.grade);
+
+        return (
+            grade !== "Not Found" &&
+            grade !== "Absent"
+        );
+
+    }).length;
 
 }
 
 
 function countMissingRows() {
 
-    return state.resultRows.filter(
-        row =>
-            normalizeGrade(row.grade) ===
-            "NOT FOUND"
+    return state.resultRows.filter(row =>
+        normalizeGrade(row.grade) === "Not Found"
     ).length;
 
 }
@@ -1747,7 +1563,6 @@ function handleExport(event) {
 
     }
 
-
     exportButton.href =
         `/api/export/${encodeURIComponent(state.jobId)}`;
 
@@ -1760,24 +1575,14 @@ function handleExport(event) {
 
 function markWorkflowStepComplete(step) {
 
-    step.classList.remove(
-        "active"
-    );
-
-    step.classList.add(
-        "completed"
-    );
+    step.classList.remove("active");
+    step.classList.add("completed");
 
     const number =
-        step.querySelector(
-            ".workflow-number"
-        );
-
+        step.querySelector(".workflow-number");
 
     if (number) {
-
         number.textContent = "✓";
-
     }
 
 }
@@ -1787,30 +1592,18 @@ function activateWorkflowStep(step) {
 
     document
         .querySelectorAll(".workflow-step")
-        .forEach(
-            item => {
+        .forEach(item => {
+            item.classList.remove("active");
+        });
 
-                item.classList.remove(
-                    "active"
-                );
-
-            }
-        );
-
-
-    step.classList.add(
-        "active"
-    );
+    step.classList.add("active");
 
 }
 
 
 function showResultsSection() {
 
-    resultsSection.classList.remove(
-        "hidden"
-    );
-
+    resultsSection.classList.remove("hidden");
 
     setTimeout(() => {
 
@@ -1831,10 +1624,7 @@ function showResultsSection() {
 function updateProcessCourseLabel() {
 
     const value =
-        normalizeCourseCode(
-            courseCode.value
-        );
-
+        normalizeCourseCode(courseCode.value);
 
     processCourseLabel.textContent =
         value || "—";
@@ -1845,15 +1635,11 @@ function updateProcessCourseLabel() {
 function updateCourseInputStatus() {
 
     const value =
-        normalizeCourseCode(
-            courseCode.value
-        );
-
+        normalizeCourseCode(courseCode.value);
 
     if (value) {
 
-        courseInputStatus.textContent =
-            "Ready";
+        courseInputStatus.textContent = "Ready";
 
         courseInputStatus.style.background =
             "var(--green-light)";
@@ -1863,8 +1649,7 @@ function updateCourseInputStatus() {
 
     } else {
 
-        courseInputStatus.textContent =
-            "Manual";
+        courseInputStatus.textContent = "Manual";
 
         courseInputStatus.style.background =
             "var(--blue-light)";
@@ -1878,7 +1663,7 @@ function updateCourseInputStatus() {
 
 
 /* =========================================================
-   LOADING
+   LOADING OVERLAY
 ========================================================= */
 
 function setLoading(
@@ -1889,31 +1674,21 @@ function setLoading(
 
     if (!visible) {
 
-        loadingOverlay.classList.add(
-            "hidden"
-        );
-
+        loadingOverlay.classList.add("hidden");
         return;
 
     }
 
+    loadingTitle.textContent = title;
+    loadingText.textContent = text;
 
-    loadingTitle.textContent =
-        title;
-
-    loadingText.textContent =
-        text;
-
-
-    loadingOverlay.classList.remove(
-        "hidden"
-    );
+    loadingOverlay.classList.remove("hidden");
 
 }
 
 
 /* =========================================================
-   MESSAGE
+   MESSAGE BOX
 ========================================================= */
 
 function showMessage(
@@ -1922,12 +1697,8 @@ function showMessage(
     type = "success"
 ) {
 
-    messageTitle.textContent =
-        title;
-
-    messageText.textContent =
-        text;
-
+    messageTitle.textContent = title;
+    messageText.textContent = text;
 
     messageBox.classList.remove(
         "hidden",
@@ -1936,29 +1707,21 @@ function showMessage(
         "warning"
     );
 
-
-    messageBox.classList.add(
-        type
-    );
-
+    messageBox.classList.add(type);
 
     if (type === "success") {
 
-        messageIcon.textContent =
-            "✓";
+        messageIcon.textContent = "✓";
 
     } else if (type === "warning") {
 
-        messageIcon.textContent =
-            "!";
+        messageIcon.textContent = "!";
 
     } else {
 
-        messageIcon.textContent =
-            "×";
+        messageIcon.textContent = "×";
 
     }
-
 
     window.scrollTo({
         top: 0,
@@ -1970,22 +1733,18 @@ function showMessage(
 
 function hideMessage() {
 
-    messageBox.classList.add(
-        "hidden"
-    );
+    messageBox.classList.add("hidden");
 
 }
 
 
 /* =========================================================
-   RESET
+   RESET EVERYTHING
 ========================================================= */
 
 async function resetEverything() {
 
-    const oldJobId =
-        state.jobId;
-
+    const oldJobId = state.jobId;
 
     try {
 
@@ -2009,7 +1768,6 @@ async function resetEverything() {
 
     }
 
-
     state.jobId = null;
 
     state.internalFile = null;
@@ -2019,160 +1777,82 @@ async function resetEverything() {
     state.resultRows = [];
 
     state.currentCourseCode = "";
+    state.assessmentScale = null;
     state.courseSuggestions = [];
-
 
     internalPdf.value = "";
     resultPdf.value = "";
+
+    internalMarkScale.value = "";
+    internalMarkScale.disabled = false;
 
     courseCode.value = "";
     changeCourseCode.value = "";
 
     resultSearch.value = "";
-
     gradeFilter.value = "ALL";
 
+    internalSelectedFile.classList.add("hidden");
+    resultSelectedFile.classList.add("hidden");
 
-    internalSelectedFile.classList.add(
-        "hidden"
-    );
+    internalResult.classList.add("hidden");
+    resultSection.classList.add("hidden");
+    resultsSection.classList.add("hidden");
 
-    resultSelectedFile.classList.add(
-        "hidden"
-    );
-
-    internalResult.classList.add(
-        "hidden"
-    );
-
-    resultSection.classList.add(
-        "hidden"
-    );
-
-    resultsSection.classList.add(
-        "hidden"
-    );
-
-    courseSuggestionsSection.classList.add(
-        "hidden"
-    );
-
-    mismatchPanel.classList.add(
-        "hidden"
-    );
-
-    emptySearchState.classList.add(
-        "hidden"
-    );
-
+    courseSuggestionsSection.classList.add("hidden");
+    mismatchPanel.classList.add("hidden");
+    emptySearchState.classList.add("hidden");
 
     internalPreviewBody.innerHTML = "";
     resultsTableBody.innerHTML = "";
     missingStudentsList.innerHTML = "";
     courseSuggestions.innerHTML = "";
 
+    studentCount.textContent = "0";
+    previewCount.textContent = "0 records";
+    selectedAssessmentLabel.textContent = "—";
 
-    studentCount.textContent =
-        "0";
+    summaryTotal.textContent = "0";
+    summaryMatched.textContent = "0";
+    summaryMissing.textContent = "0";
+    summaryCourse.textContent = "—";
 
-    previewCount.textContent =
-        "0 records";
+    processCourseLabel.textContent = "—";
+    resultRecordCount.textContent = "0 records";
 
-    summaryTotal.textContent =
-        "0";
+    dynamicGradeHeader.textContent = "Course Grade";
+    resultTableTitle.textContent = "Results";
 
-    summaryMatched.textContent =
-        "0";
+    uploadInternalButton.disabled = false;
+    processResultButton.disabled = false;
+    changeCourseButton.disabled = false;
 
-    summaryMissing.textContent =
-        "0";
+    workflowStep1.classList.remove("completed");
+    workflowStep2.classList.remove("completed");
+    workflowStep3.classList.remove("completed");
 
-    summaryCourse.textContent =
-        "—";
-
-    processCourseLabel.textContent =
-        "—";
-
-    resultRecordCount.textContent =
-        "0 records";
-
-
-    dynamicGradeHeader.textContent =
-        "Course Grade";
-
-    resultTableTitle.textContent =
-        "Results";
-
-
-    uploadInternalButton.disabled =
-        false;
-
-    processResultButton.disabled =
-        false;
-
-    changeCourseButton.disabled =
-        false;
-
-
-    workflowStep1.classList.remove(
-        "completed"
-    );
-
-    workflowStep2.classList.remove(
-        "completed"
-    );
-
-    workflowStep3.classList.remove(
-        "completed"
-    );
-
-
-    workflowStep1.classList.add(
-        "active"
-    );
-
-    workflowStep2.classList.remove(
-        "active"
-    );
-
-    workflowStep3.classList.remove(
-        "active"
-    );
-
+    workflowStep1.classList.add("active");
+    workflowStep2.classList.remove("active");
+    workflowStep3.classList.remove("active");
 
     const firstNumber =
-        workflowStep1.querySelector(
-            ".workflow-number"
-        );
+        workflowStep1.querySelector(".workflow-number");
 
     const secondNumber =
-        workflowStep2.querySelector(
-            ".workflow-number"
-        );
+        workflowStep2.querySelector(".workflow-number");
 
     const thirdNumber =
-        workflowStep3.querySelector(
-            ".workflow-number"
-        );
+        workflowStep3.querySelector(".workflow-number");
 
+    if (firstNumber) firstNumber.textContent = "1";
+    if (secondNumber) secondNumber.textContent = "2";
+    if (thirdNumber) thirdNumber.textContent = "3";
 
-    if (firstNumber) {
-        firstNumber.textContent = "1";
-    }
-
-    if (secondNumber) {
-        secondNumber.textContent = "2";
-    }
-
-    if (thirdNumber) {
-        thirdNumber.textContent = "3";
-    }
-
-
+    updateAssessmentUI();
+    updateResultTableColumns();
     updateCourseInputStatus();
 
     hideMessage();
-
 
     window.scrollTo({
         top: 0,
@@ -2189,25 +1869,13 @@ async function resetEverything() {
 async function parseJsonResponse(response) {
 
     const contentType =
-        response.headers.get(
-            "content-type"
-        ) || "";
+        response.headers.get("content-type") || "";
 
-
-    if (
-        contentType.includes(
-            "application/json"
-        )
-    ) {
-
+    if (contentType.includes("application/json")) {
         return response.json();
-
     }
 
-
-    const text =
-        await response.text();
-
+    const text = await response.text();
 
     return {
         error:
@@ -2224,9 +1892,7 @@ async function parseJsonResponse(response) {
 
 function normalizeCourseCode(value) {
 
-    return String(
-        value ?? ""
-    )
+    return String(value ?? "")
         .toUpperCase()
         .replace(/\s+/g, "")
         .trim();
@@ -2236,32 +1902,23 @@ function normalizeCourseCode(value) {
 
 function normalizeGrade(value) {
 
-    const grade =
-        String(
-            value ??
-            "Not Found"
-        )
-        .trim();
-
+    const grade = String(
+        value ?? "Not Found"
+    ).trim();
 
     if (!grade) {
         return "Not Found";
     }
 
-
-    const upper =
-        grade.toUpperCase();
-
+    const upper = grade.toUpperCase();
 
     if (upper === "NOT FOUND") {
         return "Not Found";
     }
 
-
     if (upper === "ABSENT") {
         return "Absent";
     }
-
 
     return upper;
 
@@ -2274,26 +1931,16 @@ function formatFileSize(bytes) {
         return "0 KB";
     }
 
-
     if (bytes < 1024) {
-
         return `${bytes} B`;
-
     }
-
 
     if (bytes < 1024 * 1024) {
-
-        return `${(
-            bytes / 1024
-        ).toFixed(1)} KB`;
-
+        return `${(bytes / 1024).toFixed(1)} KB`;
     }
 
-
     return `${(
-        bytes /
-        (1024 * 1024)
+        bytes / (1024 * 1024)
     ).toFixed(2)} MB`;
 
 }
@@ -2301,46 +1948,25 @@ function formatFileSize(bytes) {
 
 function formatInteger(value) {
 
-    const number =
-        Number(value || 0);
+    const number = Number(value || 0);
 
-
-    return number.toLocaleString(
-        "en-IN"
-    );
+    return number.toLocaleString("en-IN");
 
 }
 
 
 /* =========================================================
-   SECURITY / HTML ESCAPING
+   HTML ESCAPING
 ========================================================= */
 
 function escapeHtml(value) {
 
-    return String(
-        value ?? ""
-    )
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-        .replace(
-            /</g,
-            "&lt;"
-        )
-        .replace(
-            />/g,
-            "&gt;"
-        )
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-        .replace(
-            /'/g,
-            "&#039;"
-        );
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 
 }
 
@@ -2349,24 +1975,16 @@ function escapeHtml(value) {
    PAGE EXIT WARNING
 ========================================================= */
 
-window.addEventListener(
-    "beforeunload",
-    (event) => {
+window.addEventListener("beforeunload", (event) => {
 
-        /*
-         * Only warn if a processing session has
-         * actually been created.
-         */
-        if (
-            state.jobId &&
-            state.resultRows.length === 0
-        ) {
+    if (
+        state.jobId &&
+        state.resultRows.length === 0
+    ) {
 
-            event.preventDefault();
-
-            event.returnValue = "";
-
-        }
+        event.preventDefault();
+        event.returnValue = "";
 
     }
-);
+
+});

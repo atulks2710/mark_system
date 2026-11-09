@@ -1,151 +1,361 @@
 """
-Matching service for the KTU Mark Processing System.
+Matching and derived-mark calculation service for ANSORA.
 
-This module combines the data extracted from:
-
-1. Internal Mark PDF
-   {
-       "CEC23CS003": 47,
-       "CEC23CS004": 47,
-       ...
-   }
-
-2. Result PDF for the manually selected course
-   {
-       "CEC23CS003": "A",
-       "CEC23CS004": "A",
-       ...
-   }
-
-The registration number is the unique matching key.
-
-The final output is:
-
-[
-    {
-        "reg_no": "CEC23CS003",
-        "internal_mark": 47,
-        "grade": "A"
-    },
-    ...
-]
-
-The service does NOT calculate, modify, or reinterpret grades.
-It preserves the grade extracted by the result parser.
+Responsibilities:
+- Match internal marks and result grades.
+- Retain every internal student.
+- Convert grades into University Marks.
+- Calculate CO1-CO8 only for 50-mark assessments.
+- Leave calculated values blank for Absent and Not Found.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Any
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Any, Dict, List
 
 
 class MatchingError(ValueError):
-    """
-    Raised when the extracted datasets cannot be matched properly.
-    """
+    """Raised when extracted datasets cannot be matched reliably."""
 
 
+# =========================================================
+# GRADE TO UNIVERSITY MARK MAPPING
+# =========================================================
 
-# ---------------------------------------------------------------------------
-# Normalization helpers
-# ---------------------------------------------------------------------------
+GRADE_TO_UNIVERSITY_MARK = {
+    "S": 100,
+    "A+": 89,
+    "A": 84,
+    "B+": 79,
+    "B": 74,
+    "C+": 69,
+    "C": 64,
+    "D": 59,
+    "P": 54,
+    "F": 0,
+    "FE": 0,
+}
 
-def _normalize_reg_no(value: Any) -> str:
-    """
-    Normalize a registration number.
+SUPPORTED_INTERNAL_SCALES = {50, 75, 100}
 
-    Examples:
+CO_COLUMNS = tuple(
+    f"co{i}" for i in range(1, 9)
+)
 
-        "cec23cs003" -> "CEC23CS003"
-        " CEC23CS003 " -> "CEC23CS003"
-        "CEC 23 CS 003" -> "CEC23CS003"
-    """
+
+# =========================================================
+# NORMALIZATION HELPERS
+# =========================================================
+
+def normalize_registration_number(value: Any) -> str:
 
     if value is None:
         return ""
 
-    value = str(value).strip().upper()
+    return "".join(
+        str(value).strip().upper().split()
+    )
 
-    # Registration numbers should not contain spaces.
-    value = "".join(value.split())
 
-    return value
+def _normalize_reg_no(value: Any) -> str:
+
+    return normalize_registration_number(value)
+
+
+def normalize_grade(value: Any) -> str:
+
+    if value is None:
+        return ""
+
+    grade = str(value).strip().upper()
+
+    if grade in {"ABSENT", "AB", "A.B."}:
+        return "Absent"
+
+    if grade in {
+        "NOT FOUND",
+        "NOTFOUND",
+        "N/A",
+        "NA",
+        ""
+    }:
+        return "Not Found"
+
+    return grade
 
 
 def _normalize_grade(value: Any) -> str:
-    """
-    Normalize grade for storage/display.
 
-    We only remove surrounding whitespace and convert to uppercase.
+    return normalize_grade(value)
 
-    We do NOT change:
-        A+ -> A+
-        B+ -> B+
-        Absent -> Absent
 
-    The actual meaning is preserved.
-    """
+def _to_number(
+    value: Any,
+    field_name: str = "mark"
+) -> Decimal:
+
+    try:
+
+        number = Decimal(
+            str(value).strip()
+        )
+
+    except (
+        InvalidOperation,
+        TypeError,
+        ValueError,
+        AttributeError
+    ) as exc:
+
+        raise MatchingError(
+            f"Invalid {field_name}: {value!r}"
+        ) from exc
+
+    if not number.is_finite():
+
+        raise MatchingError(
+            f"Invalid {field_name}: {value!r}"
+        )
+
+    return number
+
+
+def _display_number(
+    value: Decimal | int | float | None
+):
 
     if value is None:
-        return ""
+        return None
 
-    value = str(value).strip()
+    number = (
+        value
+        if isinstance(value, Decimal)
+        else Decimal(str(value))
+    )
 
-    if value.lower() == "absent":
-        return "Absent"
+    if number == number.to_integral_value():
+        return int(number)
 
-    return value.upper()
+    return float(number)
 
 
-# ---------------------------------------------------------------------------
-# Input validation
-# ---------------------------------------------------------------------------
+# =========================================================
+# UNIVERSITY MARK CALCULATION
+# =========================================================
+
+def get_university_mark(
+    grade: Any
+) -> int | None:
+
+    """
+    Convert a grade into its corresponding University Mark.
+
+    Unknown grades, Absent and Not Found return None.
+    F and FE return 0.
+    """
+
+    normalized = normalize_grade(grade)
+
+    if normalized in {
+        "",
+        "Absent",
+        "Not Found"
+    }:
+
+        return None
+
+    return GRADE_TO_UNIVERSITY_MARK.get(
+        normalized
+    )
+
+
+# =========================================================
+# CO MARK CALCULATION
+# =========================================================
+
+def calculate_co_mark(
+    internal_mark: Any,
+    university_mark: Any,
+    internal_max_mark: int = 50
+) -> int | None:
+
+    """
+    Calculate CO marks for regular 50-mark assessments.
+
+    Formula:
+
+    ROUND(
+        ((Internal Mark + University Mark) / 150) * 100,
+        0
+    )
+
+    Uses ROUND_HALF_UP.
+
+    CO marks are not calculated for 75 or 100 marks.
+    """
+
+    if int(internal_max_mark) != 50:
+        return None
+
+    if (
+        internal_mark is None
+        or university_mark is None
+    ):
+        return None
+
+    internal = _to_number(
+        internal_mark,
+        "internal mark"
+    )
+
+    university = _to_number(
+        university_mark,
+        "University Mark"
+    )
+
+    value = (
+        (internal + university)
+        / Decimal("150")
+    ) * Decimal("100")
+
+    rounded = value.quantize(
+        Decimal("1"),
+        rounding=ROUND_HALF_UP
+    )
+
+    return int(rounded)
+
+
+# =========================================================
+# CALCULATE ALL DERIVED MARKS
+# =========================================================
+
+def calculate_derived_marks(
+    internal_mark: Any,
+    grade: Any,
+    internal_max_mark: int = 50
+) -> dict:
+
+    try:
+
+        scale = int(internal_max_mark)
+
+    except (TypeError, ValueError) as exc:
+
+        raise MatchingError(
+            "Internal assessment scale must be 50, 75 or 100."
+        ) from exc
+
+    if scale not in SUPPORTED_INTERNAL_SCALES:
+
+        raise MatchingError(
+            "Internal assessment scale must be 50, 75 or 100."
+        )
+
+    university_mark = get_university_mark(
+        grade
+    )
+
+    if scale == 50:
+
+        co_mark = calculate_co_mark(
+            internal_mark,
+            university_mark,
+            internal_max_mark=scale
+        )
+
+    else:
+
+        co_mark = None
+
+    result = {
+        "university_mark": university_mark
+    }
+
+    for column in CO_COLUMNS:
+
+        result[column] = co_mark
+
+    return result
+
+
+# =========================================================
+# INTERNAL MARK VALIDATION
+# =========================================================
 
 def _validate_internal_marks(
     internal_marks: Dict[str, Any],
+    internal_max_mark: int | None = None
 ) -> Dict[str, int | float]:
-    """
-    Validate and normalize the internal-mark dictionary.
-    """
 
     if not isinstance(internal_marks, dict):
+
         raise MatchingError(
             "Internal marks data must be a dictionary."
         )
 
-    normalized: Dict[str, int | float] = {}
+    if internal_max_mark is not None:
+
+        try:
+            scale = int(internal_max_mark)
+
+        except (TypeError, ValueError) as exc:
+
+            raise MatchingError(
+                "Internal assessment scale must be 50, 75 or 100."
+            ) from exc
+
+        if scale not in SUPPORTED_INTERNAL_SCALES:
+
+            raise MatchingError(
+                "Internal assessment scale must be 50, 75 or 100."
+            )
+
+    else:
+
+        scale = None
+
+    normalized = {}
 
     for raw_reg_no, raw_mark in internal_marks.items():
 
-        reg_no = _normalize_reg_no(
+        reg_no = normalize_registration_number(
             raw_reg_no
         )
 
         if not reg_no:
             continue
 
-        try:
-            mark = float(raw_mark)
-        except (TypeError, ValueError):
+        mark = _to_number(
+            raw_mark,
+            f"internal mark for {reg_no}"
+        )
 
-            raise MatchingError(
-                f"Invalid internal mark for "
-                f"{reg_no}: {raw_mark}"
-            )
-
-        if mark < 0 or mark > 50:
+        if mark < 0:
 
             raise MatchingError(
                 f"Internal mark for {reg_no} "
-                f"is outside the valid range 0-50: {mark}"
+                f"cannot be negative: {raw_mark}"
             )
 
-        if mark.is_integer():
-            normalized[reg_no] = int(mark)
-        else:
-            normalized[reg_no] = mark
+        if (
+            scale is not None
+            and mark > Decimal(scale)
+        ):
+
+            raise MatchingError(
+                f"Internal mark for {reg_no} "
+                f"is outside the valid range "
+                f"0-{scale}: {raw_mark}"
+            )
+
+        normalized[reg_no] = _display_number(
+            mark
+        )
 
     if not normalized:
+
         raise MatchingError(
             "No valid internal-mark records were found."
         )
@@ -153,162 +363,158 @@ def _validate_internal_marks(
     return normalized
 
 
+# =========================================================
+# GRADE VALIDATION
+# =========================================================
+
 def _validate_grades(
-    grades: Dict[str, Any],
+    grades: Dict[str, Any]
 ) -> Dict[str, str]:
-    """
-    Validate and normalize the result-grade dictionary.
-    """
 
     if not isinstance(grades, dict):
+
         raise MatchingError(
             "Result grades data must be a dictionary."
         )
 
-    normalized: Dict[str, str] = {}
+    normalized = {}
 
     for raw_reg_no, raw_grade in grades.items():
 
-        reg_no = _normalize_reg_no(
+        reg_no = normalize_registration_number(
             raw_reg_no
         )
 
         if not reg_no:
             continue
 
-        grade = _normalize_grade(
+        grade = normalize_grade(
             raw_grade
         )
 
-        if not grade:
+        if not grade or grade == "Not Found":
             continue
 
         normalized[reg_no] = grade
 
-    if not normalized:
-        raise MatchingError(
-            "No valid grade records were found."
-        )
-
     return normalized
 
 
-# ---------------------------------------------------------------------------
-# Main matching function
-# ---------------------------------------------------------------------------
+# =========================================================
+# MAIN MATCHING FUNCTION
+# =========================================================
 
 def merge_mark_data(
     internal_marks: Dict[str, Any],
     grades: Dict[str, Any],
+    course_code: str = "",
+    internal_max_mark: int = 50,
+    internal_mark_scale: int | None = None,
+    assessment_scale: int | None = None
 ) -> List[dict]:
+
     """
-    Merge internal marks and course grades using registration number.
+    Match internal marks and grades using registration number.
 
-    Parameters
-    ----------
-    internal_marks:
-        Dictionary containing registration number -> internal mark.
+    All internal students are retained.
 
-    grades:
-        Dictionary containing registration number -> grade.
+    Missing grades are displayed as Not Found.
 
-    Returns
-    -------
-    list of dictionaries
-
-    Example:
-
-        [
-            {
-                "reg_no": "CEC23CS003",
-                "internal_mark": 47,
-                "grade": "A"
-            },
-            {
-                "reg_no": "CEC23CS004",
-                "internal_mark": 47,
-                "grade": "A"
-            }
-        ]
-
-    Important:
-        Every student from the internal-mark PDF is retained.
-
-        If a grade is not found, the result gets:
-
-            "Not Found"
-
-        instead of silently removing the student.
+    The assessment scale controls the CO calculations.
     """
 
-    internal_marks = _validate_internal_marks(
-        internal_marks
+    if internal_mark_scale is not None:
+
+        internal_max_mark = internal_mark_scale
+
+    if assessment_scale is not None:
+
+        internal_max_mark = assessment_scale
+
+    try:
+
+        scale = int(internal_max_mark)
+
+    except (TypeError, ValueError) as exc:
+
+        raise MatchingError(
+            "Internal assessment scale must be 50, 75 or 100."
+        ) from exc
+
+    if scale not in SUPPORTED_INTERNAL_SCALES:
+
+        raise MatchingError(
+            "Internal assessment scale must be 50, 75 or 100."
+        )
+
+    normalized_internal = _validate_internal_marks(
+        internal_marks,
+        internal_max_mark=scale
     )
 
-    grades = _validate_grades(
+    normalized_grades = _validate_grades(
         grades
     )
 
-    results: List[dict] = []
+    results = []
 
-    for reg_no, internal_mark in internal_marks.items():
+    for reg_no, internal_mark in normalized_internal.items():
 
-        grade = grades.get(
+        grade = normalized_grades.get(
             reg_no,
-            "Not Found",
+            "Not Found"
         )
 
-        results.append(
-            {
-                "reg_no": reg_no,
-                "internal_mark": internal_mark,
-                "grade": grade,
-            }
+        derived = calculate_derived_marks(
+            internal_mark,
+            grade,
+            internal_max_mark=scale
         )
+
+        row = {
+            "reg_no": reg_no,
+            "registration_number": reg_no,
+            "internal_mark": internal_mark,
+            "grade": grade,
+            "university_mark": derived["university_mark"],
+            "internal_mark_scale": scale,
+            "course_code": course_code or ""
+        }
+
+        for column in CO_COLUMNS:
+
+            row[column] = derived[column]
+
+        results.append(row)
 
     return results
 
 
-# ---------------------------------------------------------------------------
-# Detailed matching information
-# ---------------------------------------------------------------------------
+# =========================================================
+# PROCESSING SUMMARY
+# =========================================================
 
 def create_processing_summary(
     internal_marks: Dict[str, Any],
     grades: Dict[str, Any],
+    internal_max_mark: int | None = None
 ) -> dict:
-    """
-    Create a detailed summary of the matching operation.
 
-    Example return:
-
-        {
-            "total_internal_students": 61,
-            "total_result_students": 120,
-            "matched_students": 59,
-            "missing_grades": 2,
-            "result_only_students": 61,
-            "missing_grade_reg_numbers": [...],
-            "result_only_reg_numbers": [...]
-        }
-
-    This information can be displayed by the frontend.
-    """
-
-    internal_marks = _validate_internal_marks(
-        internal_marks
+    normalized_internal = _validate_internal_marks(
+        internal_marks,
+        internal_max_mark=internal_max_mark
     )
 
-    grades = _validate_grades(
+    normalized_grades = _validate_grades(
         grades
     )
 
     internal_reg_numbers = set(
-        internal_marks.keys()
+        normalized_internal.keys()
     )
 
     result_reg_numbers = set(
-        grades.keys()
+        normalized_grades.keys()
     )
 
     matched = (
@@ -327,153 +533,145 @@ def create_processing_summary(
     )
 
     return {
-        "total_internal_students": len(
-            internal_reg_numbers
-        ),
 
-        "total_result_students": len(
-            result_reg_numbers
-        ),
+        "total_internal_students":
+            len(internal_reg_numbers),
 
-        "matched_students": len(
-            matched
-        ),
+        "total_students":
+            len(internal_reg_numbers),
 
-        "missing_grades": len(
-            missing_grades
-        ),
+        "total_result_students":
+            len(result_reg_numbers),
 
-        "result_only_students": len(
-            result_only
-        ),
+        "matched_students":
+            len(matched),
 
-        "missing_grade_reg_numbers": sorted(
-            missing_grades
-        ),
+        "missing_grades":
+            len(missing_grades),
 
-        "result_only_reg_numbers": sorted(
-            result_only
-        ),
+        "missing_students":
+            len(missing_grades),
+
+        "result_only_students":
+            len(result_only),
+
+        "missing_grade_reg_numbers":
+            sorted(missing_grades),
+
+        "missing_reg_nos":
+            sorted(missing_grades),
+
+        "result_only_reg_numbers":
+            sorted(result_only)
+
     }
 
 
-# ---------------------------------------------------------------------------
-# Combined processing helper
-# ---------------------------------------------------------------------------
+# =========================================================
+# COMBINED PROCESSING HELPER
+# =========================================================
 
 def process_and_summarize(
     internal_marks: Dict[str, Any],
     grades: Dict[str, Any],
+    course_code: str = "",
+    internal_max_mark: int = 50
 ) -> dict:
-    """
-    Perform both matching and summary generation.
-
-    This is convenient for app.py.
-
-    Example:
-
-        processed = process_and_summarize(
-            internal_marks,
-            grades
-        )
-
-        processed["results"]
-        processed["summary"]
-    """
 
     results = merge_mark_data(
         internal_marks,
         grades,
+        course_code=course_code,
+        internal_max_mark=internal_max_mark
     )
 
     summary = create_processing_summary(
         internal_marks,
         grades,
+        internal_max_mark=internal_max_mark
     )
 
     return {
         "results": results,
-        "summary": summary,
+        "summary": summary
     }
 
 
-# ---------------------------------------------------------------------------
-# Utility functions for frontend
-# ---------------------------------------------------------------------------
+# =========================================================
+# MISSING GRADE HELPER
+# =========================================================
 
 def find_missing_grades(
-    results: List[dict],
+    results: List[dict]
 ) -> List[str]:
-    """
-    Return registrations where the selected course grade was not found.
-    """
 
     missing = []
 
     for row in results:
 
-        if row.get("grade") == "Not Found":
+        if normalize_grade(
+            row.get("grade")
+        ) == "Not Found":
 
-            reg_no = _normalize_reg_no(
+            reg_no = normalize_registration_number(
                 row.get("reg_no")
+                or row.get("registration_number")
             )
 
             if reg_no:
                 missing.append(reg_no)
 
-    return sorted(
-        set(missing)
-    )
+    return sorted(set(missing))
 
+
+# =========================================================
+# COUNT HELPERS
+# =========================================================
 
 def count_matched_students(
-    results: List[dict],
+    results: List[dict]
 ) -> int:
-    """
-    Count students for whom a grade was successfully found.
-    """
 
     return sum(
         1
         for row in results
-        if row.get("grade") != "Not Found"
+        if normalize_grade(
+            row.get("grade")
+        ) != "Not Found"
     )
 
 
 def count_missing_students(
-    results: List[dict],
+    results: List[dict]
 ) -> int:
-    """
-    Count students for whom a grade was not found.
-    """
 
     return sum(
         1
         for row in results
-        if row.get("grade") == "Not Found"
+        if normalize_grade(
+            row.get("grade")
+        ) == "Not Found"
     )
 
 
-# ---------------------------------------------------------------------------
-# Optional command-line test
-# ---------------------------------------------------------------------------
+# =========================================================
+# TESTING
+# =========================================================
 
 if __name__ == "__main__":
 
-    # Small demonstration test.
-
     internal_example = {
-        "CEC23CS003": 47,
-        "CEC23CS004": 47,
-        "CEC23CS005": 46,
-        "CEC23CS006": 37,
+        "CEC23CS003": 32,
+        "CEC23CS004": 35,
+        "CEC23CS005": 28,
+        "CEC23CS006": 38
     }
 
     grades_example = {
-        "CEC23CS003": "A",
-        "CEC23CS004": "A",
-        "CEC23CS005": "B+",
-        "CEC23CS006": "F",
+        "CEC23CS003": "C+",
+        "CEC23CS004": "P",
+        "CEC23CS005": "F",
+        "CEC23CS006": "B"
     }
 
     try:
@@ -481,32 +679,42 @@ if __name__ == "__main__":
         output = process_and_summarize(
             internal_example,
             grades_example,
+            course_code="DEMO",
+            internal_max_mark=50
         )
 
-        print(
-            "\nFINAL RESULTS\n"
-        )
+        print("\n50-MARK ASSESSMENT RESULTS")
 
         for row in output["results"]:
 
             print(
-                f"{row['reg_no']} | "
-                f"{row['internal_mark']} | "
-                f"{row['grade']}"
+                row["reg_no"],
+                row["internal_mark"],
+                row["grade"],
+                row["university_mark"],
+                [
+                    row[column]
+                    for column in CO_COLUMNS
+                ]
             )
 
-        print(
-            "\nSUMMARY\n"
+        print("\n75-MARK ASSESSMENT CHECK")
+
+        lab_rows = merge_mark_data(
+            {"CEC23CS100": 63},
+            {"CEC23CS100": "A"},
+            course_code="LAB",
+            internal_max_mark=75
         )
+
+        print(lab_rows[0])
+
+        print("\nSUMMARY")
 
         for key, value in output["summary"].items():
 
-            print(
-                f"{key}: {value}"
-            )
+            print(f"{key}: {value}")
 
     except MatchingError as exc:
 
-        print(
-            f"ERROR: {exc}"
-        )
+        print(f"ERROR: {exc}")

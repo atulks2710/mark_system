@@ -1,1037 +1,232 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <meta
-        name="description"
-        content="KTU Internal Mark and Result Processing System"
-    >
-
-    <title>KTU Mark Processing System</title>
-
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='css/style.css') }}"
-    >
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ANSORA Student Mark Processing System">
+  <title>ANSORA | Mark Processing System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-
 <body>
+  <div class="background-glow glow-one"></div>
+  <div class="background-glow glow-two"></div>
 
-    <!-- =========================
-         PAGE BACKGROUND
-    ========================== -->
-    <div class="background-glow glow-one"></div>
-    <div class="background-glow glow-two"></div>
-
-    <!-- =========================
-         HEADER
-    ========================== -->
-    <header class="topbar">
-        <div class="topbar-inner">
-
-            <div class="brand">
-                <div class="brand-icon">
-                    <span>KTU</span>
-                </div>
-
-                <div class="brand-text">
-                    <h1>Mark Processing</h1>
-                    <p>Examination Result Management</p>
-                </div>
-            </div>
-
-            <div class="header-status">
-                <span class="status-dot"></span>
-                <span>System Ready</span>
-            </div>
-
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="ANSORA home">
+        
+        <div class="brand-text">
+          <h1>ANSORA</h1>
+          <p>MARK PROCESSING SYSTEM</p>
         </div>
-    </header>
+      </a>
+      <div class="header-status"><span class="status-dot"></span><span>System Ready</span></div>
+    </div>
+  </header>
 
+  <main class="page-container">
+    <section class="hero-section">
+      <div class="hero-badge"><span class="badge-dot"></span> ANSORA MARK PROCESSING</div>
+      <h2>Process student marks <span>faster and easier.</span></h2>
+      <p class="hero-description">Upload internal marks, select the assessment type, enter the course code and upload the result PDF to generate a student-wise mark sheet.</p>
+    </section>
 
-    <!-- =========================
-         MAIN
-    ========================== -->
-    <main class="page-container">
+    <section class="workflow">
+      <div class="workflow-step active" id="workflowStep1"><div class="workflow-number">1</div><div><strong>Internal Marks</strong><small>Select type & upload</small></div></div>
+      <div class="workflow-line"></div>
+      <div class="workflow-step" id="workflowStep2"><div class="workflow-number">2</div><div><strong>Course & Result</strong><small>Enter & upload</small></div></div>
+      <div class="workflow-line"></div>
+      <div class="workflow-step" id="workflowStep3"><div class="workflow-number">3</div><div><strong>Final Results</strong><small>Review & export</small></div></div>
+    </section>
 
-        <!-- =========================
-             HERO
-        ========================== -->
-        <section class="hero-section">
+    <div class="message-box hidden" id="messageBox">
+      <div class="message-icon" id="messageIcon">!</div>
+      <div class="message-content"><strong id="messageTitle">Message</strong><p id="messageText"></p></div>
+      <button type="button" class="message-close" id="messageClose" aria-label="Close">×</button>
+    </div>
 
-            <div class="hero-badge">
-                <span class="badge-dot"></span>
-                KTU Result Processing
-            </div>
-
-            <h2>
-                Process student marks
-                <span>faster and easier.</span>
-            </h2>
-
-            <p class="hero-description">
-                Upload the internal mark report, enter the required course
-                code, upload the KTU result PDF and generate a clean
-                student-wise mark sheet.
-            </p>
-
-        </section>
-
-
-        <!-- =========================
-             WORKFLOW INDICATOR
-        ========================== -->
-        <section class="workflow">
-
-            <div class="workflow-step active" id="workflowStep1">
-                <div class="workflow-number">1</div>
-                <div>
-                    <strong>Internal Marks</strong>
-                    <small>Upload PDF</small>
-                </div>
-            </div>
-
-            <div class="workflow-line"></div>
-
-            <div class="workflow-step" id="workflowStep2">
-                <div class="workflow-number">2</div>
-                <div>
-                    <strong>Course & Result</strong>
-                    <small>Enter & upload</small>
-                </div>
-            </div>
-
-            <div class="workflow-line"></div>
-
-            <div class="workflow-step" id="workflowStep3">
-                <div class="workflow-number">3</div>
-                <div>
-                    <strong>Final Results</strong>
-                    <small>Review & export</small>
-                </div>
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             MESSAGE / STATUS
-        ========================== -->
-        <div
-            class="message-box hidden"
-            id="messageBox"
-        >
-            <div class="message-icon" id="messageIcon">!</div>
-
-            <div class="message-content">
-                <strong id="messageTitle">Message</strong>
-                <p id="messageText"></p>
-            </div>
-
-            <button
-                type="button"
-                class="message-close"
-                id="messageClose"
-                aria-label="Close"
-            >
-                ×
-            </button>
+    <!-- STEP 1 -->
+    <section class="card processing-card" id="internalSection">
+      <div class="card-header">
+        <div class="section-icon icon-blue"><span>01</span></div>
+        <div>
+          <p class="section-label">STEP 1</p>
+          <h3>Select Assessment Type & Upload Internal Marks</h3>
+          <p class="section-description">Choose the maximum internal mark before uploading the PDF. This selection controls the calculated columns in the final sheet.</p>
         </div>
-
-
-        <!-- =========================
-             STEP 1
-        ========================== -->
-        <section
-            class="card processing-card"
-            id="internalSection"
-        >
-
-            <div class="card-header">
-
-                <div class="section-icon icon-blue">
-                    <span>01</span>
-                </div>
-
-                <div>
-                    <p class="section-label">STEP 1</p>
-                    <h3>Upload Internal Mark PDF</h3>
-                    <p class="section-description">
-                        Select the KTU Student Examination Eligibility
-                        Details PDF containing registration numbers and
-                        internal marks.
-                    </p>
-                </div>
-
-            </div>
-
-
-            <!-- Drop Zone -->
-            <div
-                class="upload-zone"
-                id="internalDropZone"
-            >
-
-                <input
-                    type="file"
-                    id="internalPdf"
-                    accept=".pdf,application/pdf"
-                    hidden
-                >
-
-                <div class="upload-content">
-
-                    <div class="upload-icon">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M12 16V4"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                            />
-                            <path
-                                d="M7 9L12 4L17 9"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                            <path
-                                d="M5 20H19"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                            />
-                        </svg>
-                    </div>
-
-                    <h4>Drop your PDF here</h4>
-
-                    <p>
-                        or
-                        <button
-                            type="button"
-                            class="browse-button"
-                            id="internalBrowseButton"
-                        >
-                            browse files
-                        </button>
-                    </p>
-
-                    <span class="upload-note">
-                        PDF files only • Maximum size 20 MB
-                    </span>
-
-                </div>
-
-            </div>
-
-
-            <!-- Selected File -->
-            <div
-                class="selected-file hidden"
-                id="internalSelectedFile"
-            >
-
-                <div class="file-main">
-
-                    <div class="pdf-icon">
-                        PDF
-                    </div>
-
-                    <div class="file-info">
-                        <strong id="internalFileName">
-                            File.pdf
-                        </strong>
-
-                        <span id="internalFileSize">
-                            0 KB
-                        </span>
-                    </div>
-
-                </div>
-
-                <button
-                    type="button"
-                    class="remove-file"
-                    id="removeInternalFile"
-                    title="Remove file"
-                >
-                    ×
-                </button>
-
-            </div>
-
-
-            <!-- Upload Button -->
-            <div class="card-actions">
-
-                <button
-                    type="button"
-                    class="primary-button"
-                    id="uploadInternalButton"
-                >
-                    <span>Upload & Extract Marks</span>
-                    <span class="button-arrow">→</span>
-                </button>
-
-            </div>
-
-
-            <!-- Internal Result -->
-            <div
-                class="extraction-result hidden"
-                id="internalResult"
-            >
-
-                <div class="success-heading">
-                    <div class="success-check">✓</div>
-
-                    <div>
-                        <strong>Internal marks extracted successfully</strong>
-                        <span id="internalResultText">
-                            0 students found.
-                        </span>
-                    </div>
-                </div>
-
-
-                <div class="stats-row">
-
-                    <div class="mini-stat">
-                        <span class="mini-stat-label">
-                            Students Found
-                        </span>
-                        <strong id="studentCount">
-                            0
-                        </strong>
-                    </div>
-
-                    <div class="mini-stat">
-                        <span class="mini-stat-label">
-                            Source
-                        </span>
-                        <strong>
-                            Internal PDF
-                        </strong>
-                    </div>
-
-                    <div class="mini-stat">
-                        <span class="mini-stat-label">
-                            Status
-                        </span>
-                        <strong class="success-text">
-                            Ready
-                        </strong>
-                    </div>
-
-                </div>
-
-
-                <!-- Preview -->
-                <div class="preview-wrapper">
-
-                    <div class="preview-header">
-
-                        <div>
-                            <h4>Student Preview</h4>
-                            <p>
-                                Showing a preview of extracted internal marks.
-                            </p>
-                        </div>
-
-                        <span class="preview-count" id="previewCount">
-                            0 records
-                        </span>
-
-                    </div>
-
-                    <div class="table-scroll">
-
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Registration Number</th>
-                                    <th>Internal Mark</th>
-                                </tr>
-                            </thead>
-
-                            <tbody id="internalPreviewBody">
-                            </tbody>
-                        </table>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             STEP 2
-        ========================== -->
-        <section
-            class="card processing-card hidden"
-            id="resultSection"
-        >
-
-            <div class="card-header">
-
-                <div class="section-icon icon-purple">
-                    <span>02</span>
-                </div>
-
-                <div>
-                    <p class="section-label">STEP 2</p>
-                    <h3>Choose Course & Upload Result</h3>
-                    <p class="section-description">
-                        Enter the course code manually and upload the KTU
-                        result PDF. The course code is never selected
-                        automatically.
-                    </p>
-                </div>
-
-            </div>
-
-
-            <!-- Course Code -->
-            <div class="field-group">
-
-                <label for="courseCode">
-                    Course Code
-                </label>
-
-                <div class="course-input-wrapper">
-
-                    <input
-                        type="text"
-                        id="courseCode"
-                        class="text-input"
-                        placeholder="Example: CST309"
-                        autocomplete="off"
-                        spellcheck="false"
-                        maxlength="10"
-                    >
-
-                    <div
-                        class="course-input-status"
-                        id="courseInputStatus"
-                    >
-                        Manual
-                    </div>
-
-                </div>
-
-                <p class="field-help">
-                    Enter the exact KTU course code you want to process.
-                    Example: <strong>CST309</strong>
-                </p>
-
-            </div>
-
-
-            <!-- Suggested Course Codes -->
-            <div
-                class="course-suggestions hidden"
-                id="courseSuggestionsSection"
-            >
-
-                <div class="suggestion-heading">
-                    <div>
-                        <strong>Courses found in the CSE section</strong>
-                        <p>
-                            These are only suggestions. Click a course to
-                            place it in the field, or type your own code.
-                        </p>
-                    </div>
-
-                    <span id="suggestionLoading" class="suggestion-loading">
-                        Checking PDF...
-                    </span>
-                </div>
-
-                <div
-                    class="suggestion-list"
-                    id="courseSuggestions"
-                >
-                </div>
-
-            </div>
-
-
-            <!-- Result PDF Drop Zone -->
-            <div class="field-group">
-
-                <label>
-                    KTU Result PDF
-                </label>
-
-                <div
-                    class="upload-zone compact"
-                    id="resultDropZone"
-                >
-
-                    <input
-                        type="file"
-                        id="resultPdf"
-                        accept=".pdf,application/pdf"
-                        hidden
-                    >
-
-                    <div class="upload-content">
-
-                        <div class="upload-icon small">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <path
-                                    d="M12 16V4"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                />
-                                <path
-                                    d="M7 9L12 4L17 9"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                />
-                                <path
-                                    d="M5 20H19"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                />
-                            </svg>
-                        </div>
-
-                        <h4>Select KTU Result PDF</h4>
-
-                        <p>
-                            or
-                            <button
-                                type="button"
-                                class="browse-button"
-                                id="resultBrowseButton"
-                            >
-                                browse files
-                            </button>
-                        </p>
-
-                        <span class="upload-note">
-                            The system will isolate the Computer Science &
-                            Engineering section.
-                        </span>
-
-                    </div>
-
-                </div>
-
-
-                <!-- Result File -->
-                <div
-                    class="selected-file hidden"
-                    id="resultSelectedFile"
-                >
-
-                    <div class="file-main">
-
-                        <div class="pdf-icon purple">
-                            PDF
-                        </div>
-
-                        <div class="file-info">
-                            <strong id="resultFileName">
-                                Result.pdf
-                            </strong>
-
-                            <span id="resultFileSize">
-                                0 KB
-                            </span>
-                        </div>
-
-                    </div>
-
-                    <button
-                        type="button"
-                        class="remove-file"
-                        id="removeResultFile"
-                        title="Remove file"
-                    >
-                        ×
-                    </button>
-
-                </div>
-
-            </div>
-
-
-            <!-- Process -->
-            <div class="process-panel">
-
-                <div class="process-info">
-
-                    <span class="process-label">
-                        Processing course
-                    </span>
-
-                    <strong id="processCourseLabel">
-                        —
-                    </strong>
-
-                    <span class="process-note">
-                        The internal PDF will not need to be uploaded again
-                        when changing the course code.
-                    </span>
-
-                </div>
-
-                <button
-                    type="button"
-                    class="primary-button process-button"
-                    id="processResultButton"
-                >
-                    <span>Process Results</span>
-                    <span class="button-arrow">→</span>
-                </button>
-
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             STEP 3 - RESULTS
-        ========================== -->
-        <section
-            class="card results-card hidden"
-            id="resultsSection"
-        >
-
-            <div class="card-header result-header">
-
-                <div class="section-icon icon-green">
-                    <span>03</span>
-                </div>
-
-                <div>
-                    <p class="section-label">STEP 3</p>
-                    <h3>Processed Results</h3>
-                    <p class="section-description">
-                        Student registration numbers, internal marks and
-                        selected course grades.
-                    </p>
-                </div>
-
-                <div class="header-actions">
-
-                    <a
-                        href="#"
-                        class="secondary-button export-button"
-                        id="exportButton"
-                    >
-                        <span>Export Excel</span>
-                        <span>↓</span>
-                    </a>
-
-                </div>
-
-            </div>
-
-
-            <!-- Summary Cards -->
-            <div class="summary-grid">
-
-                <div class="summary-card">
-                    <span class="summary-label">
-                        Total Students
-                    </span>
-
-                    <strong
-                        class="summary-value"
-                        id="summaryTotal"
-                    >
-                        0
-                    </strong>
-
-                    <span class="summary-caption">
-                        From internal PDF
-                    </span>
-                </div>
-
-
-                <div class="summary-card">
-                    <span class="summary-label">
-                        Grades Matched
-                    </span>
-
-                    <strong
-                        class="summary-value"
-                        id="summaryMatched"
-                    >
-                        0
-                    </strong>
-
-                    <span class="summary-caption">
-                        Registration numbers matched
-                    </span>
-                </div>
-
-
-                <div class="summary-card warning">
-                    <span class="summary-label">
-                        Not Found
-                    </span>
-
-                    <strong
-                        class="summary-value"
-                        id="summaryMissing"
-                    >
-                        0
-                    </strong>
-
-                    <span class="summary-caption">
-                        No grade found
-                    </span>
-                </div>
-
-
-                <div class="summary-card course">
-                    <span class="summary-label">
-                        Course
-                    </span>
-
-                    <strong
-                        class="summary-value course-value"
-                        id="summaryCourse"
-                    >
-                        —
-                    </strong>
-
-                    <span class="summary-caption">
-                        Currently selected
-                    </span>
-                </div>
-
-            </div>
-
-
-            <!-- Change Course -->
-            <div class="change-course-panel">
-
-                <div class="change-course-text">
-
-                    <div class="change-icon">
-                        ↻
-                    </div>
-
-                    <div>
-                        <strong>Change Course Code</strong>
-
-                        <p>
-                            The result PDF is already stored for this session.
-                            You can process another course without uploading
-                            the internal PDF again.
-                        </p>
-                    </div>
-
-                </div>
-
-
-                <div class="change-course-controls">
-
-                    <input
-                        type="text"
-                        id="changeCourseCode"
-                        class="text-input"
-                        placeholder="Example: CST305"
-                        autocomplete="off"
-                        spellcheck="false"
-                        maxlength="10"
-                    >
-
-                    <button
-                        type="button"
-                        class="secondary-button"
-                        id="changeCourseButton"
-                    >
-                        Apply Course
-                    </button>
-
-                </div>
-
-            </div>
-
-
-            <!-- Results Toolbar -->
-            <div class="results-toolbar">
-
-                <div class="result-heading">
-
-                    <h4 id="resultTableTitle">
-                        CST309 Results
-                    </h4>
-
-                    <span
-                        class="result-record-count"
-                        id="resultRecordCount"
-                    >
-                        0 records
-                    </span>
-
-                </div>
-
-
-                <div class="search-wrapper">
-
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <circle
-                            cx="11"
-                            cy="11"
-                            r="6.5"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                        />
-
-                        <path
-                            d="M16 16L21 21"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                        />
-                    </svg>
-
-                    <input
-                        type="search"
-                        id="resultSearch"
-                        placeholder="Search registration number or grade..."
-                    >
-
-                </div>
-
-
-                <div class="filter-wrapper">
-
-                    <select
-                        id="gradeFilter"
-                        class="grade-filter"
-                    >
-                        <option value="ALL">
-                            All Grades
-                        </option>
-
-                        <option value="A+">A+</option>
-                        <option value="A">A</option>
-                        <option value="B+">B+</option>
-                        <option value="B">B</option>
-                        <option value="C+">C+</option>
-                        <option value="C">C</option>
-                        <option value="D">D</option>
-                        <option value="P">P</option>
-                        <option value="F">F</option>
-                        <option value="Absent">Absent</option>
-                        <option value="Not Found">Not Found</option>
-                    </select>
-
-                </div>
-
-            </div>
-
-
-            <!-- Table -->
-            <div class="table-container">
-
-                <div class="table-scroll large">
-
-                    <table
-                        class="data-table result-data-table"
-                        id="resultTable"
-                    >
-
-                        <thead>
-                            <tr>
-                                <th class="index-column">#</th>
-
-                                <th>
-                                    Registration Number
-                                </th>
-
-                                <th class="mark-column">
-                                    Internal Mark
-                                </th>
-
-                                <th id="dynamicGradeHeader">
-                                    CST309 Grade
-                                </th>
-
-                            </tr>
-                        </thead>
-
-                        <tbody id="resultsTableBody">
-                        </tbody>
-
-                    </table>
-
-                </div>
-
-                <!-- Empty Search State -->
-                <div
-                    class="empty-state hidden"
-                    id="emptySearchState"
-                >
-                    <div class="empty-icon">
-                        🔎
-                    </div>
-
-                    <h4>No matching students</h4>
-
-                    <p>
-                        Try another registration number or change the grade
-                        filter.
-                    </p>
-                </div>
-
-            </div>
-
-
-            <!-- Missing Students -->
-            <div
-                class="mismatch-panel hidden"
-                id="mismatchPanel"
-            >
-
-                <div class="mismatch-header">
-
-                    <div class="mismatch-title">
-
-                        <div class="mismatch-icon">
-                            !
-                        </div>
-
-                        <div>
-                            <strong>
-                                Some grades could not be found
-                            </strong>
-
-                            <p>
-                                These students were present in the internal
-                                mark PDF but no grade for the selected course
-                                was found in the result PDF.
-                            </p>
-                        </div>
-
-                    </div>
-
-                    <span
-                        class="mismatch-count"
-                        id="mismatchCount"
-                    >
-                        0
-                    </span>
-
-                </div>
-
-
-                <div
-                    class="missing-list"
-                    id="missingStudentsList"
-                >
-                </div>
-
-            </div>
-
-
-            <!-- Footer Actions -->
-            <div class="results-footer">
-
-                <div class="results-footer-note">
-                    <span class="footer-check">✓</span>
-                    Processing completed successfully.
-                </div>
-
-                <button
-                    type="button"
-                    class="reset-button"
-                    id="startNewButton"
-                >
-                    Start New Processing
-                </button>
-
-            </div>
-
-        </section>
-
-
-        <!-- =========================
-             LOADING OVERLAY
-        ========================== -->
-        <div
-            class="loading-overlay hidden"
-            id="loadingOverlay"
-        >
-
-            <div class="loading-card">
-
-                <div class="loading-spinner"></div>
-
-                <h3 id="loadingTitle">
-                    Processing...
-                </h3>
-
-                <p id="loadingText">
-                    Please wait while the PDF is being processed.
-                </p>
-
-            </div>
-
+      </div>
+
+      <div class="field-group assessment-field">
+        <label for="internalMarkScale">Internal Assessment Type</label>
+        <select id="internalMarkScale" name="internal_mark_scale" class="text-input" required>
+          <option value="" selected disabled>Select assessment type</option>
+          <option value="50">50 Marks – Regular Internal</option>
+          <option value="75">75 Marks – Laboratory</option>
+          <option value="100">100 Marks – Project</option>
+        </select>
+        <p class="field-help" id="assessmentHelp">For 50-mark assessments, University Mark and CO1–CO8 will be calculated. For 75- and 100-mark assessments, only University Mark will be calculated.</p>
+      </div>
+
+      <div class="upload-zone" id="internalDropZone">
+        <input type="file" id="internalPdf" accept=".pdf,application/pdf" hidden>
+        <div class="upload-content">
+          <div class="upload-icon">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 16V4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M7 9L12 4L17 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5 20H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h4>Drop your internal marks PDF here</h4>
+          <p>or <button type="button" class="browse-button" id="internalBrowseButton">browse files</button></p>
+          <span class="upload-note">PDF files only • Maximum size 20 MB</span>
         </div>
+      </div>
 
-    </main>
+      <div class="selected-file hidden" id="internalSelectedFile">
+        <div class="file-main"><div class="pdf-icon">PDF</div><div class="file-info"><strong id="internalFileName">File.pdf</strong><span id="internalFileSize">0 KB</span></div></div>
+        <button type="button" class="remove-file" id="removeInternalFile" title="Remove file">×</button>
+      </div>
 
+      <div class="card-actions">
+        <button type="button" class="primary-button" id="uploadInternalButton"><span>Upload & Extract Marks</span><span class="button-arrow">→</span></button>
+      </div>
 
-    <!-- =========================
-         FOOTER
-    ========================== -->
-    <footer class="site-footer">
-
-        <div class="site-footer-inner">
-
-            <span>
-                KTU Mark Processing System
-            </span>
-
-            <span>
-                Internal Marks + Examination Results
-            </span>
-
+      <div class="extraction-result hidden" id="internalResult">
+        <div class="success-heading"><div class="success-check">✓</div><div><strong>Internal marks extracted successfully</strong><span id="internalResultText">0 students found.</span></div></div>
+        <div class="stats-row">
+          <div class="mini-stat"><span class="mini-stat-label">Students Found</span><strong id="studentCount">0</strong></div>
+          <div class="mini-stat"><span class="mini-stat-label">Assessment Type</span><strong id="selectedAssessmentLabel">—</strong></div>
+          <div class="mini-stat"><span class="mini-stat-label">Status</span><strong class="success-text">Ready</strong></div>
         </div>
+        <div class="preview-wrapper">
+          <div class="preview-header"><div><h4>Student Preview</h4><p>Showing a preview of extracted internal marks.</p></div><span class="preview-count" id="previewCount">0 records</span></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>#</th><th>Registration Number</th><th>Internal Mark</th></tr></thead>
+              <tbody id="internalPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    </footer>
+    <!-- STEP 2 -->
+    <section class="card processing-card hidden" id="resultSection">
+      <div class="card-header">
+        <div class="section-icon icon-purple"><span>02</span></div>
+        <div><p class="section-label">STEP 2</p><h3>Choose Course & Upload Result</h3><p class="section-description">Enter the course code manually and upload the result PDF. The course code will not be selected automatically.</p></div>
+      </div>
 
+      <div class="field-group">
+        <label for="courseCode">Course Code</label>
+        <div class="course-input-wrapper">
+          <input type="text" id="courseCode" class="text-input" placeholder="Example: CST309" autocomplete="off" spellcheck="false" maxlength="10">
+          <div class="course-input-status" id="courseInputStatus">Manual</div>
+        </div>
+        <p class="field-help">Enter the exact course code you want to process.</p>
+      </div>
 
-    <script
-        src="{{ url_for('static', filename='js/app.js') }}"
-    ></script>
+      <div class="course-suggestions hidden" id="courseSuggestionsSection">
+        <div class="suggestion-heading"><div><strong>Suggested Course Codes</strong><p>Click a suggestion to place it in the course code field, or type your own code.</p></div><span id="suggestionLoading" class="suggestion-loading">Checking PDF...</span></div>
+        <div class="suggestion-list" id="courseSuggestions"></div>
+      </div>
 
+      <div class="field-group">
+        <label for="resultPdf">Result PDF</label>
+        <div class="upload-zone compact" id="resultDropZone">
+          <input type="file" id="resultPdf" accept=".pdf,application/pdf" hidden>
+          <div class="upload-content">
+            <div class="upload-icon small">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 16V4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M7 9L12 4L17 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 20H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h4>Select Result PDF</h4>
+            <p>or <button type="button" class="browse-button" id="resultBrowseButton">browse files</button></p>
+            <span class="upload-note">The system will extract student grades from the PDF.</span>
+          </div>
+        </div>
+        <div class="selected-file hidden" id="resultSelectedFile">
+          <div class="file-main"><div class="pdf-icon purple">PDF</div><div class="file-info"><strong id="resultFileName">Result.pdf</strong><span id="resultFileSize">0 KB</span></div></div>
+          <button type="button" class="remove-file" id="removeResultFile" title="Remove file">×</button>
+        </div>
+      </div>
+
+      <div class="process-panel">
+        <div class="process-info"><span class="process-label">Processing course</span><strong id="processCourseLabel">—</strong><span class="process-note">You can change the course code later without uploading the internal PDF again.</span></div>
+        <button type="button" class="primary-button process-button" id="processResultButton"><span>Process Results</span><span class="button-arrow">→</span></button>
+      </div>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="card results-card hidden" id="resultsSection">
+      <div class="card-header result-header">
+        <div class="section-icon icon-green"><span>03</span></div>
+        <div><p class="section-label">STEP 3</p><h3>Processed Results</h3><p class="section-description">Review student internal marks, grades, University Marks and calculated course outcomes.</p></div>
+        <div class="header-actions"><a href="#" class="secondary-button export-button" id="exportButton"><span>Export Excel</span><span>↓</span></a></div>
+      </div>
+
+      <div class="summary-grid">
+        <div class="summary-card"><span class="summary-label">Total Students</span><strong class="summary-value" id="summaryTotal">0</strong><span class="summary-caption">From internal PDF</span></div>
+        <div class="summary-card"><span class="summary-label">Grades Matched</span><strong class="summary-value" id="summaryMatched">0</strong><span class="summary-caption">Registration numbers matched</span></div>
+        <div class="summary-card warning"><span class="summary-label">Not Found</span><strong class="summary-value" id="summaryMissing">0</strong><span class="summary-caption">No grade found</span></div>
+        <div class="summary-card course"><span class="summary-label">Course</span><strong class="summary-value course-value" id="summaryCourse">—</strong><span class="summary-caption">Currently selected</span></div>
+      </div>
+
+      <div class="change-course-panel">
+        <div class="change-course-text"><div class="change-icon">↻</div><div><strong>Change Course Code</strong><p>The result PDF is stored for this session. Process another course without uploading the internal PDF again.</p></div></div>
+        <div class="change-course-controls">
+          <input type="text" id="changeCourseCode" class="text-input" placeholder="Example: CST305" autocomplete="off" spellcheck="false" maxlength="10">
+          <button type="button" class="secondary-button" id="changeCourseButton">Apply Course</button>
+        </div>
+      </div>
+
+      <div class="results-toolbar">
+        <div class="result-heading"><h4 id="resultTableTitle">Processed Results</h4><span class="result-record-count" id="resultRecordCount">0 records</span></div>
+        <div class="search-wrapper">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/><path d="M16 16L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <input type="search" id="resultSearch" placeholder="Search registration number or grade...">
+        </div>
+        <div class="filter-wrapper">
+          <select id="gradeFilter" class="grade-filter">
+            <option value="ALL">All Grades</option><option value="S">S</option><option value="A+">A+</option><option value="A">A</option><option value="B+">B+</option><option value="B">B</option><option value="C+">C+</option><option value="C">C</option><option value="D">D</option><option value="P">P</option><option value="F">F</option><option value="FE">FE</option><option value="Absent">Absent</option><option value="Not Found">Not Found</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <div class="table-scroll large">
+          <table class="data-table result-data-table" id="resultTable">
+            <thead><tr id="resultTableHeadRow">
+              <th class="index-column">#</th><th>Registration Number</th><th class="mark-column">Internal Mark</th><th id="dynamicGradeHeader">Grade</th><th id="universityMarkHeader">University Mark</th>
+              <!-- app.js should append CO1–CO8 headers only for 50-mark assessments. -->
+            </tr></thead>
+            <tbody id="resultsTableBody"></tbody>
+          </table>
+        </div>
+        <div class="empty-state hidden" id="emptySearchState"><div class="empty-icon">⌕</div><h4>No matching students</h4><p>Try another registration number or change the grade filter.</p></div>
+      </div>
+
+      <div class="mismatch-panel hidden" id="mismatchPanel">
+        <div class="mismatch-header">
+          <div class="mismatch-title"><div class="mismatch-icon">!</div><div><strong>Some grades could not be found</strong><p>These students were present in the internal marks PDF, but no grade for the selected course was found in the result PDF.</p></div></div>
+          <span class="mismatch-count" id="mismatchCount">0</span>
+        </div>
+        <div class="missing-list" id="missingStudentsList"></div>
+      </div>
+
+      <div class="results-footer"><div class="results-footer-note"><span class="footer-check">✓</span>Processing completed successfully.</div><button type="button" class="reset-button" id="startNewButton">Start New Processing</button></div>
+    </section>
+
+    <div class="loading-overlay hidden" id="loadingOverlay">
+      <div class="loading-card"><div class="loading-spinner"></div><h3 id="loadingTitle">Processing...</h3><p id="loadingText">Please wait while the PDF is being processed.</p></div>
+    </div>
+  </main>
+
+  <footer class="site-footer"><div class="site-footer-inner"><span>ANSORA Mark Processing System</span><span>Accurate • Simple • Efficient</span></div></footer>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
