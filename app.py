@@ -312,7 +312,10 @@ def upload_internal():
         job["internal_pdf"] = str(internal_path)
         job["internal_filename"] = secure_filename(uploaded_file.filename)
 
-        internal_marks = extract_internal_marks(internal_path)
+        internal_marks = extract_internal_marks(
+            internal_path,
+            expected_denominator=internal_mark_scale,
+        )
         if not internal_marks:
             raise InternalPDFError("No student internal marks were found in the PDF.")
 

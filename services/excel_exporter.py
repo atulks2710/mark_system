@@ -2,15 +2,10 @@
 ANSORA Mark Processing System
 Excel Export Service
 
-50 Marks:
-Registration Number | Internal Mark | Course Grade |
-University Mark | CO1 | CO2 | CO3 | CO4 | CO5 | CO6 | CO7 | CO8
-
-75 Marks:
+All assessment types (50, 75 and 100 marks) export the same columns:
 Registration Number | Internal Mark | Course Grade | University Mark
 
-100 Marks:
-Registration Number | Internal Mark | Course Grade | University Mark
+CO1-CO8 calculations and columns are not included.
 """
 
 from __future__ import annotations
@@ -41,9 +36,6 @@ class ExcelExportError(ValueError):
 
 SUPPORTED_INTERNAL_SCALES = {50, 75, 100}
 
-CO_KEYS = tuple(
-    f"co{i}" for i in range(1, 9)
-)
 
 
 # =========================================================
@@ -250,13 +242,6 @@ def _validate_results(
             )
         }
 
-        for key in CO_KEYS:
-
-            cleaned[key] = _clean_numeric_value(
-                row.get(key),
-                key.upper(),
-                reg_no
-            )
 
         cleaned_results.append(cleaned)
 
@@ -286,7 +271,8 @@ def generate_excel(
         75  = Laboratory
         100 = Project
 
-    CO1-CO8 are included only for 50-mark assessments.
+    Every assessment type exports only:
+    Registration Number, Internal Mark, Course Grade and University Mark.
     """
 
     course_code = _normalize_course_code(
@@ -323,19 +309,6 @@ def generate_excel(
         f"{course_code} Grade",
         "University Mark"
     ]
-
-    if scale == 50:
-
-        headers.extend([
-            "CO1",
-            "CO2",
-            "CO3",
-            "CO4",
-            "CO5",
-            "CO6",
-            "CO7",
-            "CO8"
-        ])
 
     # -----------------------------------------------------
     # CREATE WORKBOOK
@@ -555,14 +528,6 @@ def generate_excel(
 
         ]
 
-        # CO columns are added only for 50-mark assessments.
-        if scale == 50:
-
-            values.extend(
-                student[key]
-                for key in CO_KEYS
-            )
-
         for column_number, value in enumerate(
             values,
             start=1
@@ -638,12 +603,6 @@ def generate_excel(
         4: 17
     }
 
-    if scale == 50:
-
-        for column_number in range(5, 13):
-
-            widths[column_number] = 10
-
     for column_number, width in widths.items():
 
         worksheet.column_dimensions[
@@ -654,7 +613,11 @@ def generate_excel(
     # SHEET SETTINGS
     # -----------------------------------------------------
 
-    worksheet.freeze_panes = f"A{first_data_row}"
+    # Keep the worksheet fully scrollable (no frozen rows or columns).
+    # This allows the user to scroll through the entire exported sheet.
+    worksheet.freeze_panes = None
+    worksheet.sheet_view.topLeftCell = "A1"
+    worksheet.sheet_view.zoomScale = 90
 
     worksheet.auto_filter.ref = table_reference
 
@@ -964,7 +927,10 @@ def generate_excel(
     summary_sheet.column_dimensions["A"].width = 35
     summary_sheet.column_dimensions["B"].width = 48
 
-    summary_sheet.freeze_panes = "A3"
+    # Keep the summary sheet fully scrollable as well.
+    summary_sheet.freeze_panes = None
+    summary_sheet.sheet_view.topLeftCell = "A1"
+    summary_sheet.sheet_view.zoomScale = 90
 
     # =====================================================
     # SAVE WORKBOOK
@@ -1027,7 +993,6 @@ if __name__ == "__main__":
             "internal_mark": 32,
             "grade": "C+",
             "university_mark": 69,
-            **{f"co{i}": 67 for i in range(1, 9)},
             "internal_mark_scale": 50
         },
 
@@ -1036,7 +1001,6 @@ if __name__ == "__main__":
             "internal_mark": 35,
             "grade": "P",
             "university_mark": 54,
-            **{f"co{i}": 59 for i in range(1, 9)},
             "internal_mark_scale": 50
         }
 
@@ -1053,10 +1017,19 @@ if __name__ == "__main__":
             "internal_mark": 63,
             "grade": "A",
             "university_mark": 84,
-            **{f"co{i}": None for i in range(1, 9)},
             "internal_mark_scale": 75
         }
 
+    ]
+
+    demo_100 = [
+        {
+            "reg_no": "CEC23CS101",
+            "internal_mark": 88,
+            "grade": "S",
+            "university_mark": 100,
+            "internal_mark_scale": 100
+        }
     ]
 
     with TemporaryDirectory() as temp_dir:
@@ -1075,15 +1048,16 @@ if __name__ == "__main__":
             internal_max_mark=75
         )
 
-        book_50 = load_workbook(
-            path_50,
-            read_only=True
+        path_100 = generate_excel(
+            demo_100,
+            "PROJ001",
+            Path(temp_dir) / "project.xlsx",
+            internal_max_mark=100
         )
 
-        book_75 = load_workbook(
-            path_75,
-            read_only=True
-        )
+        book_50 = load_workbook(path_50)
+        book_75 = load_workbook(path_75)
+        book_100 = load_workbook(path_100)
 
         headers_50 = [
             cell.value
@@ -1105,22 +1079,58 @@ if __name__ == "__main__":
             )
         ]
 
-        assert len(headers_50) == 12
-        assert headers_50[3] == "University Mark"
-        assert headers_50[-1] == "CO8"
+        expected_headers_50 = [
+            "Registration Number",
+            "Internal Mark",
+            "CST309 Grade",
+            "University Mark",
+        ]
+        expected_headers_75 = [
+            "Registration Number",
+            "Internal Mark",
+            "LAB001 Grade",
+            "University Mark",
+        ]
 
+        assert headers_50[:4] == expected_headers_50
+        assert headers_75[:4] == expected_headers_75
+        assert len(headers_50) == 4
         assert len(headers_75) == 4
-        assert headers_75[-1] == "University Mark"
 
-        book_50.close()
-        book_75.close()
+        headers_100 = [
+            cell.value
+            for cell in book_100["Marks"].iter_rows(
+                min_row=9,
+                max_row=9
+            ).__next__()
+        ]
+
+        expected_headers_100 = [
+            "Registration Number",
+            "Internal Mark",
+            "PROJ001 Grade",
+            "University Mark",
+        ]
+
+        assert headers_100[:4] == expected_headers_100
+        assert len(headers_100) == 4
+
+        # Both sheets must remain normally scrollable.
+        for book in (book_50, book_75, book_100):
+            assert book["Marks"].freeze_panes is None
+            assert book["Processing Summary"].freeze_panes is None
+            book.close()
 
         print("Excel export tests passed.")
 
         print(
-            "50-mark: University Mark + CO1-CO8"
+            "50-mark: four columns only; worksheet is scrollable"
         )
 
         print(
-            "75-mark: University Mark only"
+            "75-mark: four columns only; worksheet is scrollable"
+        )
+
+        print(
+            "100-mark: four columns only; worksheet is scrollable"
         )

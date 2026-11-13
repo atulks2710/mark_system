@@ -514,40 +514,44 @@ function updateAssessmentUI() {
         0
     );
 
+    // CO1–CO8 calculations are no longer required.
+    // Only University Mark will be calculated for every assessment type.
+
     if (scale === 50) {
 
         assessmentHelp.textContent =
-            "Regular internal assessment: University Mark and CO1–CO8 will be calculated.";
+            "Regular internal assessment: Only University Mark will be calculated.";
 
-    } else if (scale === 75 || scale === 100) {
+    } else if (scale === 75) {
 
         assessmentHelp.textContent =
-            "University Mark will be calculated. CO1–CO8 are not calculated for laboratory or project assessments.";
+            "Laboratory assessment: Only University Mark will be calculated.";
+
+    } else if (scale === 100) {
+
+        assessmentHelp.textContent =
+            "Project assessment: Only University Mark will be calculated.";
 
     } else {
 
         assessmentHelp.textContent =
-            "For 50-mark assessments, University Mark and CO1–CO8 will be calculated. For 75- and 100-mark assessments, only University Mark will be calculated.";
+            "Select an assessment type. University Mark will be calculated for all assessment types.";
 
     }
 
-    selectedAssessmentLabel.textContent =
-        getAssessmentLabel(scale);
+    // Display selected assessment type.
+    if (selectedAssessmentLabel) {
 
+        selectedAssessmentLabel.textContent =
+            getAssessmentLabel(scale);
+
+    }
+
+    // Enable upload only when PDF and assessment type are selected.
     uploadInternalButton.disabled =
         Boolean(state.jobId) ||
         !state.internalFile ||
         !scale;
-
-}
-
-
-function usesCOColumns() {
-
-    return Number(
-        state.assessmentScale ||
-        internalMarkScale.value
-    ) === 50;
 
 }
 
@@ -1227,10 +1231,7 @@ function updateResultTableColumns() {
 
 function usesCOColumns() {
 
-    return Number(
-        state.assessmentScale ||
-        internalMarkScale.value
-    ) === 50;
+    return false;
 
 }
 
